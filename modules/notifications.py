@@ -4,9 +4,13 @@ from modules import data
 import streamlit as st
 
 def _init_api():
-    # Credentials hardcoded as per user request
-    client_id = "6q15fql2fg61ahdk1r033albym"
-    client_secret = "7ek500yc7l9hiacxc6j112eijcz5hyh72dlw4ilhnebh2igchnuffhrpq6"
+    # Get credentials from secrets
+    try:
+        client_id = st.secrets["NOTIFICATIONAPI"]["CLIENT_ID"]
+        client_secret = st.secrets["NOTIFICATIONAPI"]["CLIENT_SECRET"]
+    except:
+        print("WARNING: NotificationAPI credentials not configured in secrets")
+        return False
     
     if client_id and client_secret:
         notificationapi.init(client_id, client_secret)
