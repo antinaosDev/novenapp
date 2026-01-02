@@ -142,10 +142,12 @@ def render_maps():
                         st.success("Recurso agregado al inventario.")
                         st.rerun()
             
-            # List Units
+            # List Units & Management
             units_df = data.get_units()
             if not units_df.empty:
                 st.divider()
+                st.subheader("Inventario Actual")
+                
                 st.dataframe(
                     units_df,
                     column_config={
@@ -156,6 +158,44 @@ def render_maps():
                     hide_index=True,
                     width='stretch'
                 )
+                
+                # Management Area
+                st.markdown("### 🛠️ Gestionar Recurso")
+                
+                # Selector
+                unit_options = units_df['id'].tolist()
+                sel_unit_id = st.selectbox(
+                    "Seleccionar Recurso para Editar/Eliminar:", 
+                    unit_options, 
+                    format_func=lambda x: f"{units_df[units_df['id']==x]['name'].values[0]} ({units_df[units_df['id']==x]['type'].values[0]})"
+                )
+                
+                if sel_unit_id:
+                    u_row = units_df[units_df['id'] == sel_unit_id].iloc[0]
+                    
+                    with st.container(border=True):
+                        st.write(f"**Editando: {u_row['name']}**")
+                        
+                        with st.form(f"edit_unit_{sel_unit_id}"):
+                            c_e1, c_e2 = st.columns(2)
+                            new_u_name = c_e1.text_input("Nombre", value=u_row['name'])
+                            curr_type = u_row['type']
+                            type_opts = ["Maquinaria", "Vehículo", "Herramienta", "Tecnología"]
+                            new_u_type = c_e2.selectbox("Tipo", type_opts, index=type_opts.index(curr_type) if curr_type in type_opts else 0)
+                            
+                            new_u_det = st.text_input("Detalles / Estado", value=u_row['details'])
+                            
+                            if st.form_submit_button("💾 Actualizar Recurso"):
+                                data.update_unit(sel_unit_id, new_u_name, new_u_type, new_u_det)
+                                st.toast("Recurso actualizado", icon="✅")
+                                st.rerun()
+                        
+                        st.markdown("")
+                        if st.button("🗑️ Eliminar Recurso", key=f"del_unit_{sel_unit_id}", type="primary"):
+                             data.delete_unit(sel_unit_id)
+                             st.toast("Recurso eliminado", icon="🗑️")
+                             st.rerun()
+
             else:
                 st.info("No hay recursos en inventario.")
     else:

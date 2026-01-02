@@ -260,6 +260,17 @@ def get_units():
     response = supabase.table("units").select("*").execute()
     return pd.DataFrame(response.data)
 
+def update_unit(unit_id, name, type, details):
+    data = {
+        "name": name,
+        "type": type,
+        "details": details
+    }
+    supabase.table("units").update(data).eq("id", unit_id).execute()
+
+def delete_unit(unit_id):
+    supabase.table("units").delete().eq("id", unit_id).execute()
+
 # Expenses
 def add_expense(date, project_id, faena_id, unit_id, category, amount, description):
     data = {
