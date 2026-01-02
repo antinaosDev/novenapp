@@ -6,8 +6,8 @@ from datetime import datetime
 # Initialize Supabase Client
 @st.cache_resource
 def init_supabase():
-    url = st.secrets["SUPABASE"]["URL"]
-    key = st.secrets["SUPABASE"]["KEY"]
+    url = st.secrets["supabase"]["URL"]
+    key = st.secrets["supabase"]["KEY"]
     return create_client(url, key)
 
 supabase: Client = init_supabase()

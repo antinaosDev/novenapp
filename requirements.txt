@@ -8,3 +8,5 @@ matplotlib
 python-dotenv
 openpyxl
 reportlab
+groq
+notificationapi-python-server-sdk
