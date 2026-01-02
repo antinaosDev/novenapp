@@ -295,6 +295,12 @@ def get_expenses_df(project_id=None):
         new_row['unit'] = row['unit']['name'] if row.get('unit') else None
         flat_data.append(new_row)
         
+    if not flat_data:
+        return pd.DataFrame(columns=[
+            'id', 'date', 'amount', 'category', 'description', 
+            'project_id', 'project', 'faena', 'unit'
+        ])
+        
     return pd.DataFrame(flat_data)
 
 @retry_db
@@ -400,7 +406,10 @@ def get_dashboard_alerts():
 def get_recent_expenses(limit=5):
     # Select relations 
     response = supabase.table("expenses").select("date,description,category,amount").order("date", desc=True).limit(limit).execute()
-    return pd.DataFrame(response.data)
+    df = pd.DataFrame(response.data)
+    if df.empty:
+        return pd.DataFrame(columns=['date', 'description', 'category', 'amount'])
+    return df
 
 # --- Generic Helper to replace old run_query for complex selects ---
 def run_query(query_str, params=None, return_df=True):
@@ -637,7 +646,10 @@ def get_subcontractors(project_id=None):
     if project_id:
         query = query.eq("project_id", project_id)
     response = query.execute()
-    return pd.DataFrame(response.data)
+    df = pd.DataFrame(response.data)
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'project_id', 'name', 'rut', 'contact_email', 'contact_phone', 'specialty', 'representative', 'status'])
+    return df
 
 def create_subcontractor(project_id, name, rut, email, phone, specialty, rep):
     data = {
@@ -672,7 +684,10 @@ def delete_subcontractor(sub_id):
 @retry_db
 def get_compliance_documents(sub_id):
     response = supabase.table("compliance_documents").select("*").eq("subcontractor_id", sub_id).order("last_updated", desc=True).execute()
-    return pd.DataFrame(response.data)
+    df = pd.DataFrame(response.data)
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'subcontractor_id', 'document_type', 'status', 'expiration_date', 'last_updated'])
+    return df
 
 def create_compliance_document(sub_id, doc_type, status, expiration):
     data = {
@@ -693,7 +708,10 @@ def get_quality_logs(project_id=None):
     if project_id:
         query = query.eq("project_id", project_id)
     response = query.execute()
-    return pd.DataFrame(response.data)
+    df = pd.DataFrame(response.data)
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'project_id', 'title', 'description', 'inspector_name', 'signer_name', 'date'])
+    return df
 
 def create_quality_log(project_id, title, description, inspector, signer_name):
     data = {
@@ -723,7 +741,10 @@ def get_lab_tests(project_id=None):
     if project_id:
         query = query.eq("project_id", project_id)
     response = query.execute()
-    return pd.DataFrame(response.data)
+    df = pd.DataFrame(response.data)
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'project_id', 'test_type', 'test_date', 'result', 'observation'])
+    return df
 
 def create_lab_test(project_id, test_type, date, result, obs):
     data = {
@@ -753,7 +774,10 @@ def get_tasks(project_id=None):
     if project_id:
         query = query.eq("project_id", project_id)
     response = query.execute()
-    return pd.DataFrame(response.data)
+    df = pd.DataFrame(response.data)
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'project_id', 'name', 'start_date', 'end_date', 'status'])
+    return df
 
 def create_task(project_id, name, start, end, status="Por Hacer"):
     data = {
@@ -789,7 +813,13 @@ def get_tenders(project_id=None):
     if project_id:
         query = query.eq("project_id", project_id)
     response = query.execute()
-    return pd.DataFrame(response.data)
+    df = pd.DataFrame(response.data)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            'id', 'project_id', 'title', 'type', 'budget_estimated', 
+            'utm_value_at_creation', 'status', 'ssd_code', 'mercado_publico_id'
+        ])
+    return df
 
 def update_tender_status(tender_id, new_status):
     supabase.table("tenders").update({"status": new_status}).eq("id", tender_id).execute()
@@ -819,7 +849,13 @@ def get_contracts(tender_id=None):
      if tender_id:
          query = query.eq("tender_id", tender_id)
      res = query.execute()
-     return pd.DataFrame(res.data)
+     df = pd.DataFrame(res.data)
+     if df.empty:
+         return pd.DataFrame(columns=[
+             'id', 'tender_id', 'contractor_name', 'rut_contractor', 
+             'amount', 'start_date', 'end_date', 'status'
+         ])
+     return df
 
 def create_guarantee(contract_id, g_type, amount, expiration):
     data = {"contract_id": contract_id, "type": g_type, "amount": amount, "expiration_date": str(expiration)}
@@ -950,10 +986,18 @@ def get_purchase_orders(project_id=None):
             else:
                  df['project_name'] = "Desconocido"
             return df
-        return pd.DataFrame()
+        return pd.DataFrame(columns=[
+            'id', 'project_id', 'provider_name', 'date', 
+            'total_amount', 'description', 'status', 'order_number', 
+            'projects', 'project_name'
+        ])
     except Exception as e:
         print(f"Error fetching POs: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(columns=[
+            'id', 'project_id', 'provider_name', 'date', 
+            'total_amount', 'description', 'status', 'order_number', 
+            'projects', 'project_name'
+        ])
 
 # --- Admin / Config ---
 def get_config(key, default=None):
