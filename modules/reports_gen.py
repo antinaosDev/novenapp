@@ -190,12 +190,11 @@ def generate_pdf_report(title, sections):
 
 def generate_excel(sheets_dict):
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
         for sheet_name, df in sheets_dict.items():
             safe_name = sheet_name[:31]
             df.to_excel(writer, sheet_name=safe_name, index=False)
-            worksheet = writer.sheets[safe_name]
-            for idx, col in enumerate(df.columns):
-                 worksheet.set_column(idx, idx, 20)
+            # Column resizing removed to avoid xlsxwriter dependency
     output.seek(0)
+    return output.getvalue()
     return output.getvalue()

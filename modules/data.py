@@ -2,6 +2,7 @@ import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime
+import time
 
 # Initialize Supabase Client
 @st.cache_resource
@@ -11,6 +12,24 @@ def init_supabase():
     return create_client(url, key)
 
 supabase: Client = init_supabase()
+
+def retry_db(func):
+    """Decorator to retry Supabase queries on connection error."""
+    def wrapper(*args, **kwargs):
+        retries = 3
+        for attempt in range(retries):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                # Check for ReadError or Resource unavailable
+                error_msg = str(e)
+                if "Resource temporarily unavailable" in error_msg or "ReadError" in error_msg:
+                    if attempt < retries - 1:
+                        time.sleep(1 * (attempt + 1))
+                        continue
+                raise e
+        return func(*args, **kwargs)
+    return wrapper
 
 def init_db():
     """Checks if connection works. Logic moved to Supabase Management via SQL Editor."""
@@ -29,6 +48,7 @@ def add_project(name, description, budget, start_date, end_date):
     }
     supabase.table("projects").insert(data).execute()
 
+@retry_db
 def get_projects():
     response = supabase.table("projects").select("*").execute()
     df = pd.DataFrame(response.data)
@@ -110,6 +130,7 @@ def delete_project(project_id):
         print(f"Error deleting project: {e}")
         return False
 
+@retry_db
 def get_projects_expiring_soon(days_threshold):
     """Returns active projects ending within the next X days."""
     try:
@@ -137,6 +158,7 @@ def get_projects_expiring_soon(days_threshold):
         return pd.DataFrame()
 
 # Contracts & Guarantees Expiration
+@retry_db
 def get_contracts_expiring_soon(days_threshold):
     try:
         from datetime import datetime, timedelta
@@ -155,6 +177,7 @@ def get_contracts_expiring_soon(days_threshold):
         print(f"Error checking contracts: {e}")
         return pd.DataFrame()
 
+@retry_db
 def get_guarantees_expiring_soon(days_threshold):
     try:
         from datetime import datetime, timedelta
@@ -231,6 +254,7 @@ def add_expense(date, project_id, faena_id, unit_id, category, amount, descripti
     }
     supabase.table("expenses").insert(data).execute()
 
+@retry_db
 def get_expenses_df(project_id=None):
     # Supabase join syntax is: "col, relation(col)"
     query = supabase.table("expenses").select(
@@ -254,6 +278,7 @@ def get_expenses_df(project_id=None):
         
     return pd.DataFrame(flat_data)
 
+@retry_db
 def get_kpis():
     # --- 1. Finance ---
     projs = get_projects()
@@ -301,6 +326,7 @@ def get_kpis():
         "open_tenders": open_tenders
     }
 
+@retry_db
 def get_dashboard_alerts():
     alerts = []
     
@@ -586,6 +612,7 @@ def delete_purchase_order(po_id):
     supabase.table("purchase_orders").delete().eq("id", po_id).execute()
 
 # --- Compliance (Subcontractors) ---
+@retry_db
 def get_subcontractors(project_id=None):
     query = supabase.table("subcontractors").select("*")
     if project_id:
@@ -623,6 +650,7 @@ def delete_subcontractor(sub_id):
     supabase.table("subcontractors").delete().eq("id", sub_id).execute()
 
 # --- Compliance Documents ---
+@retry_db
 def get_compliance_documents(sub_id):
     response = supabase.table("compliance_documents").select("*").eq("subcontractor_id", sub_id).order("last_updated", desc=True).execute()
     return pd.DataFrame(response.data)
@@ -640,6 +668,7 @@ def delete_compliance_document(doc_id):
     supabase.table("compliance_documents").delete().eq("id", doc_id).execute()
 
 # --- Quality ---
+@retry_db
 def get_quality_logs(project_id=None):
     query = supabase.table("quality_logs").select("*").order("date", desc=True)
     if project_id:
@@ -669,6 +698,7 @@ def delete_quality_log(log_id):
     supabase.table("quality_logs").delete().eq("id", log_id).execute()
 
 # --- Lab Tests ---
+@retry_db
 def get_lab_tests(project_id=None):
     query = supabase.table("lab_tests").select("*").order("test_date", desc=True)
     if project_id:
@@ -698,6 +728,7 @@ def delete_lab_test(test_id):
     supabase.table("lab_tests").delete().eq("id", test_id).execute()
 
 # --- Lean (Tasks) ---
+@retry_db
 def get_tasks(project_id=None):
     query = supabase.table("tasks").select("*").order("start_date")
     if project_id:
@@ -733,6 +764,7 @@ def create_tender(project_id, title, estimated_budget, tender_type, utm_value, s
     }
     supabase.table("tenders").insert(data).execute()
 
+@retry_db
 def get_tenders(project_id=None):
     query = supabase.table("tenders").select("*")
     if project_id:
@@ -762,6 +794,7 @@ def create_contract(tender_id, contractor_name, rut, amount, start, end):
     }
     supabase.table("contracts").insert(data).execute()
 
+@retry_db
 def get_contracts(tender_id=None):
      query = supabase.table("contracts").select("*")
      if tender_id:
@@ -794,6 +827,7 @@ def delete_contract(contract_id):
     supabase.table("contracts").delete().eq("id", contract_id).execute()
 
 # --- Phases ---
+@retry_db
 def get_phases(project_id):
     res = supabase.table("phases").select("*").eq("project_id", project_id).execute()
     return pd.DataFrame(res.data)
@@ -811,6 +845,7 @@ def delete_phase(phase_id):
 
 # --- Comments ---
 # --- Comments ---
+@retry_db
 def get_comments(project_id):
     # Select all fields including ID and user_id for permissions
     res = supabase.table("comments").select("id, content, timestamp, user_id, user:users(username)").eq("project_id", project_id).order("timestamp", desc=True).execute()
@@ -838,6 +873,7 @@ def update_project_config(project_id, status, lat, lon):
      }).eq("id", project_id).execute()
 
 # --- Teams & Stats ---
+@retry_db
 def get_global_team_stats():
     # Fetch all assignments with project names
     # Table: project_assignments (id, project_id, user_id, role)
@@ -877,6 +913,7 @@ def get_global_team_stats():
     }
 
 # --- Finance (Purchase Orders) ---
+@retry_db
 def get_purchase_orders(project_id=None):
     """Fetches all POs with Project Names."""
     try:
