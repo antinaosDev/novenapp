@@ -186,7 +186,7 @@ def generate_pdf_report(title, sections):
         elif stype == 'new_page':
              pdf.add_page()
              
-    return pdf.output()  # fpdf2 returns bytes directly with default dest or dest='S' depending on version, usually bytes is preferred for streamlit
+    return bytes(pdf.output())  # Ensure it is bytes, not bytearray
 
 def generate_excel(sheets_dict):
     output = io.BytesIO()
