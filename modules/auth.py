@@ -113,7 +113,7 @@ def render_login():
                      <div style="color: var(--primary); font-size: 0.875rem;">Control</div>
                 </div>
                 <div>
-                     <div style="font-weight: 800; color: white; font-size: 1.5rem;">24/7</div>
+                     <div style="font-weight: 800; color: white; font-size: 1.5rem;">Diario</div>
                      <div style="color: var(--primary); font-size: 0.875rem;">Monitoreo</div>
                 </div>
              </div>
