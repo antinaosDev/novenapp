@@ -186,7 +186,7 @@ def generate_pdf_report(title, sections):
         elif stype == 'new_page':
              pdf.add_page()
              
-    return pdf.output(dest='S').encode('latin-1')
+    return pdf.output()  # fpdf2 returns bytes directly with default dest or dest='S' depending on version, usually bytes is preferred for streamlit
 
 def generate_excel(sheets_dict):
     output = io.BytesIO()
@@ -196,5 +196,4 @@ def generate_excel(sheets_dict):
             df.to_excel(writer, sheet_name=safe_name, index=False)
             # Column resizing removed to avoid xlsxwriter dependency
     output.seek(0)
-    return output.getvalue()
     return output.getvalue()
