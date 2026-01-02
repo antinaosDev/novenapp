@@ -197,5 +197,5 @@ else:
                 st.caption("NovApp Dev")
                 
         with col3:
-            st.caption("Aplicación desarrollada por **Alain Antinao Sepúlveda** | v1.2.5")
+            st.caption("Aplicación desarrollada por **Alain Antinao Sepúlveda** | v1.2.6")
             st.caption("📧 alain.antinao.s@gmail.com")

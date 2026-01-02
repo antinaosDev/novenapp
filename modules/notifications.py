@@ -152,6 +152,11 @@ def check_and_notify_deadlines():
     def send_batch(items, type_label, name_col, date_col, tpl_func):
         count = 0
         for _, item in items.iterrows():
+            # Idempotency Check: Prevent duplicate notifications for the same event
+            notif_key = f"notif_{type_label}_{item['id']}"
+            if data.get_config(notif_key):
+                continue
+
             end_dt = datetime.strptime(str(item[date_col]), '%Y-%m-%d')
             days_left = (end_dt - datetime.now()).days + 1
             
@@ -166,10 +171,17 @@ def check_and_notify_deadlines():
                 subject = f"⚠️ Vencimiento Proyecto: {item[name_col]} ({days_left} días)"
                 msg = tpl_func(item[name_col], item[date_col], days_left)
             
+            # Send to all recipients
+            success_any = False
             for _, u in recipients.iterrows():
                 if send_notification(u['email'], subject, msg):
+                    success_any = True
                     count += 1
-            log.append(f"{type_label} ID {item['id']}: Alertados {len(recipients)} usuarios.")
+            
+            # Mark as notified if at least one email went out (or even if not, to avoid retry loops on errors? Better only on success)
+            if success_any:
+                data.set_config(notif_key, datetime.now().strftime('%Y-%m-%d'))
+                log.append(f"{type_label} ID {item['id']}: Alertados {len(recipients)} usuarios.")
         return count
 
     # 3. Process each type
