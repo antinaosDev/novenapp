@@ -189,7 +189,10 @@ else:
         col1, col2, col3, col4 = st.columns([3,1,5,1])
         with col2:
             if IMG_LOGO_ALAIN:
-                st.image(IMG_LOGO_ALAIN, width=120)
+                try:
+                    st.image(IMG_LOGO_ALAIN, width=120)
+                except Exception:
+                    st.caption("NovApp Dev")
             else:
                 st.caption("NovApp Dev")
                 
