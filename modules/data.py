@@ -3,6 +3,8 @@ from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime
 import time
+import httpx
+import httpcore
 
 # Initialize Supabase Client
 @st.cache_resource
@@ -16,16 +18,27 @@ supabase: Client = init_supabase()
 def retry_db(func):
     """Decorator to retry Supabase queries on connection error."""
     def wrapper(*args, **kwargs):
-        retries = 3
+        retries = 5
+        base_delay = 2
         for attempt in range(retries):
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                # Check for ReadError or Resource unavailable
+                # Check for ReadError, Resource unavailable, or Network errors
                 error_msg = str(e)
-                if "Resource temporarily unavailable" in error_msg or "ReadError" in error_msg:
+                # Catch specific network related errors or string matches
+                is_network_error = (
+                    "Resource temporarily unavailable" in error_msg or 
+                    "ReadError" in error_msg or 
+                    "ConnectError" in error_msg or
+                    isinstance(e, (httpx.ReadError, httpx.ConnectError, httpcore.ReadError, httpcore.ConnectError))
+                )
+                
+                if is_network_error:
                     if attempt < retries - 1:
-                        time.sleep(1 * (attempt + 1))
+                        sleep_time = base_delay * (attempt + 1)
+                        print(f"Database connection error: {e}. Retrying in {sleep_time}s... (Attempt {attempt+1}/{retries})")
+                        time.sleep(sleep_time)
                         continue
                 raise e
         return func(*args, **kwargs)
@@ -52,6 +65,12 @@ def add_project(name, description, budget, start_date, end_date):
 def get_projects():
     response = supabase.table("projects").select("*").execute()
     df = pd.DataFrame(response.data)
+    if df.empty:
+        # Return with expected columns to prevent KeyError in views
+        return pd.DataFrame(columns=[
+            'id', 'name', 'description', 'budget_total', 
+            'start_date', 'end_date', 'status', 'latitude', 'longitude'
+        ])
     return df
 
 def update_project(project_id, name, description, budget, start_date, end_date, status="Activo", lat=-33.4489, lon=-70.6693):
