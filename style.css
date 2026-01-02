@@ -1,0 +1,334 @@
+/* Font Import */
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+:root {
+    /* --- Premium Color Palette --- */
+    /* Primary: Vibrant Emerald/Green for Freshness & Money/Growth */
+    --primary: #10b981;
+    /* Emerald 500 */
+    --primary-focus: #059669;
+    /* Emerald 600 */
+    --primary-light: #ecfdf5;
+    /* Emerald 50 */
+    --primary-content: #ffffff;
+
+    /* Backgrounds */
+    --bg-main: #f8fafc;
+    /* Slate 50 */
+    --bg-card: #ffffff;
+    --bg-sidebar: #ffffff;
+
+    /* Text */
+    --text-primary: #1e293b;
+    /* Slate 800 (Softer than black) */
+    --text-secondary: #64748b;
+    /* Slate 500 */
+    --text-muted: #94a3b8;
+    /* Slate 400 */
+
+    /* UI Borders & Depth */
+    --border-color: #e2e8f0;
+    /* Slate 200 */
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -4px rgb(0 0 0 / 0.07);
+    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.5);
+
+    /* Typography */
+    --font-main: 'Manrope', sans-serif;
+}
+
+/* --- Global Reset --- */
+html,
+body,
+[class*="css"] {
+    font-family: var(--font-main) !important;
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+}
+
+.stApp {
+    background-color: var(--bg-main);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: var(--font-main) !important;
+    font-weight: 800 !important;
+    color: var(--text-primary) !important;
+    letter-spacing: -0.025em;
+}
+
+/* --- Sidebar --- */
+/* --- Sidebar --- */
+[data-testid="stSidebar"] {
+    background-color: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.02);
+    /* Subtle depth */
+}
+
+/* Sidebar divider */
+[data-testid="stSidebar"] hr {
+    margin: 1.5rem 0;
+    border-color: var(--border-color);
+    opacity: 0.5;
+}
+
+/* Navigation Selection in Sidebar (Radio turned into Menu) */
+[data-testid="stSidebar"] [data-testid="stRadio"]>div {
+    gap: 0.5rem;
+    /* Space between items */
+}
+
+/* The Label container for each option */
+[data-testid="stSidebar"] [data-testid="stRadio"] label {
+    background-color: transparent;
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    margin: 0;
+    border: 1px solid transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    display: flex;
+    /* Align text and icon */
+    align-items: center;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+/* Hover State */
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+    background-color: var(--bg-main);
+    color: var(--primary-focus);
+    transform: translateX(4px);
+    /* Subtle movement */
+}
+
+/* Active/Checked State - Using :has selector for modern browsers or generic focus approach */
+/* Streamlit adds data-checked attributes in newer versions or we rely on the input check */
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+    background-color: var(--primary-light);
+    color: var(--primary-focus);
+    font-weight: 700;
+    border: 1px solid rgba(16, 185, 129, 0.1);
+    /* Subtle border */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+/* Hide the default Radio Circle to look like links */
+[data-testid="stSidebar"] [data-testid="stRadio"] label div[role="radio"] {
+    display: none !important;
+}
+
+/* Also hide any direct circles if structure differs */
+[data-testid="stSidebar"] [data-testid="stRadio"] label input[type="radio"] {
+    display: none;
+}
+
+/* Hide the text spacer that sometimes appears */
+[data-testid="stSidebar"] [data-testid="stRadio"] label>div:first-child {
+    display: none;
+}
+
+/* --- Responsive Adjustments --- */
+@media (max-width: 768px) {
+
+    /* Mobile tweaks */
+    .block-container {
+        padding-top: 3rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 1.5rem !important;
+    }
+
+    h1 {
+        font-size: 2rem !important;
+    }
+}
+
+
+/* --- Cards (st.container(border=True)) --- */
+/* This is the class for containers with borders */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+/* Hover Effect for Cards to make them feel interactive */
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+    border-color: #cbd5e1;
+}
+
+/* Nested Containers - Reduce shadow/padding for nested ones to avoid mess */
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"] {
+    box-shadow: none;
+    background-color: #f8fafc;
+    border: 1px dashed var(--border-color);
+}
+
+/* --- Metrics --- */
+/* Since metrics are inside cards, we keep them clean but punchy */
+[data-testid="stMetric"] {
+    background-color: transparent;
+    padding: 0;
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--text-secondary);
+    font-size: 0.825rem !important;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--text-primary);
+    font-size: 2rem !important;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}
+
+[data-testid="stMetricDelta"] {
+    font-weight: 600;
+    font-size: 0.875rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background-color: #f1f5f9;
+    /* Fallback */
+    display: inline-block;
+    margin-top: 4px;
+}
+
+/* Colorize generic delta (Streamlit handles colors via inline styles usually, but we can try to override if needed) */
+
+/* --- Buttons --- */
+.stButton button {
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.2s;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-card);
+    box-shadow: var(--shadow-sm);
+    color: var(--text-primary);
+    padding: 0.6rem 1.25rem;
+}
+
+.stButton button:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background-color: var(--primary-light);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+/* Primary Button Override (if possible via attribute selectors or sibling hacks) */
+/* Trying to target the button where the python code said type="primary" */
+/* Streamlit usually adds a specific class or style. We trust generic .stButton button is the base.
+   Often 'primary' buttons have a different structure or class in newer streamlit. 
+   Let's check for 'kind' attribute if present in DOM, otherwise we rely on user strictly using st.button(..., type="primary") which renders usually with a specific class like .st-emotion-cache-... 
+   Safest is to just style all buttons well. 
+*/
+
+/* --- Inputs --- */
+/* Text Input, Number Input, Selectbox, etc. */
+.stTextInput input,
+.stNumberInput input,
+.stDateInput input,
+.stSelectbox div[data-baseweb="select"]>div {
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-card);
+    transition: all 0.2s;
+}
+
+.stTextInput input:focus,
+.stNumberInput input:focus,
+.stDateInput input:focus,
+.stSelectbox div[data-baseweb="select"]>div:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+    outline: none;
+}
+
+/* Sections / Headers */
+div[data-testid="stMarkdownContainer"] hr {
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+    border-color: var(--border-color);
+}
+
+/* --- Dataframes --- */
+[data-testid="stDataFrame"] {
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+}
+
+[data-testid="stDataFrame"] table {
+    /* If it renders as table */
+}
+
+/* --- Expander --- */
+.streamlit-expanderHeader {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s;
+}
+
+.streamlit-expanderHeader:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background-color: var(--primary-light);
+}
+
+.streamlit-expanderContent {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 1rem;
+    background-color: #fafafa;
+}
+
+/* --- Tabs --- */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.stTabs [data-baseweb="tab"] {
+    background-color: transparent;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background-color: var(--primary-light);
+    color: var(--primary-focus);
+}
+
+/* Remove the active red bar and use pill style instead? 
+   Hard to override complex tab styles without !important mess. 
+   Streamlit adds a div for the indicator. 
+*/
+.stTabs [data-baseweb="tab-highlight"] {
+    background-color: var(--primary);
+}

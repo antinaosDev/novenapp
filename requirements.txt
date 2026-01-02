@@ -1,0 +1,10 @@
+streamlit
+pandas
+plotly
+supabase
+bcrypt
+Pillow
+matplotlib
+python-dotenv
+openpyxl
+reportlab
