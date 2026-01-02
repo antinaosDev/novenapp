@@ -10,3 +10,4 @@ openpyxl
 reportlab
 groq
 notificationapi-python-server-sdk
+fpdf
