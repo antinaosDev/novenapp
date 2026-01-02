@@ -276,12 +276,13 @@ def render_dashboard():
                      # --- PAGE 1: EXECUTIVE SUMMARY ---
                      
                      # KPI Row 1: Finance & Ops
+                     active_projects_count = len(rp_projs[rp_projs['status']=='Activo']) if not rp_projs.empty and 'status' in rp_projs.columns else 0
                      sections.append({
                          "type": "kpi_row",
                          "content": [
                              {"label": "Presupuesto Total", "value": f"${rp_kpis['total_budget']:,.0f}", "sub": "Inversión Aprobada"},
                              {"label": "Gasto Ejecutado", "value": f"${rp_kpis['total_spent']:,.0f}", "sub": f"{exec_pct:.1f}% Ejecución"},
-                             {"label": "Cartera Activa", "value": str(len(rp_projs[rp_projs['status']=='Activo'])), "sub": "Proyectos en Curso"}
+                             {"label": "Cartera Activa", "value": str(active_projects_count), "sub": "Proyectos en Curso"}
                          ]
                      })
                      
@@ -356,7 +357,11 @@ def render_dashboard():
                          sections.append({"type": "plot", "content": fig2, "title": "Tendencia Financiera"})
                      
                      # Risk Table
-                     risks = rp_projs[rp_projs['days_left'] < 60].sort_values('days_left')
+                     # Guard against empty projects or missing columns
+                     risks = pd.DataFrame()
+                     if not rp_projs.empty and 'days_left' in rp_projs.columns:
+                        risks = rp_projs[rp_projs['days_left'] < 60].sort_values('days_left')
+
                      if not risks.empty:
                          # Prepare table logic
                          risk_dis = risks[['name', 'end_date', 'days_left']].copy()
