@@ -11,3 +11,4 @@ reportlab
 groq
 notificationapi-python-server-sdk
 fpdf2
+xlsxwriter
