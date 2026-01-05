@@ -554,6 +554,9 @@ def render_project_details(project_id):
                             if loc:
                                 st.session_state.temp_proj_lat = loc.latitude
                                 st.session_state.temp_proj_lon = loc.longitude
+                                # FIX: Update widget keys directly to force input update
+                                st.session_state['inp_lat'] = loc.latitude
+                                st.session_state['inp_lon'] = loc.longitude
                                 st.success(f"Encontrado: {loc.address}")
                             else:
                                 st.warning("No encontrado. Intente ser más específico.")
