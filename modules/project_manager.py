@@ -536,16 +536,19 @@ def render_project_details(project_id):
                 
                 # --- GEOLOCATION HELPER (Outside Form) ---
                 st.write("📍 **Ubicación Geográfica**")
-                c_geo_input, c_geo_btn = st.columns([3, 1])
-                address_search = c_geo_input.text_input("Buscar Dirección", placeholder="Ej: Av. Providencia 1234, Santiago")
-                
-                # Store lat/lon in session state if searching to update the number inputs dynamically
-                if 'temp_proj_lat' not in st.session_state:
-                     st.session_state.temp_proj_lat = float(project.get('latitude', -33.4489))
-                if 'temp_proj_lon' not in st.session_state:
-                     st.session_state.temp_proj_lon = float(project.get('longitude', -70.6693))
+                with st.form("geo_search_form"):
+                    c_geo_input, c_geo_btn = st.columns([3, 1])
+                    address_search = c_geo_input.text_input("Buscar Dirección", placeholder="Ej: Av. Providencia 1234, Santiago")
+                    
+                    # Store lat/lon in session state if searching to update the number inputs dynamically
+                    if 'temp_proj_lat' not in st.session_state:
+                         st.session_state.temp_proj_lat = float(project.get('latitude', -33.4489))
+                    if 'temp_proj_lon' not in st.session_state:
+                         st.session_state.temp_proj_lon = float(project.get('longitude', -70.6693))
 
-                if c_geo_btn.button("🔍 Ubicar", key='btn_geo_proj'):
+                    search_submitted = st.form_submit_button("🔍 Ubicar")
+                
+                if search_submitted:
                     if address_search:
                         try:
                             # Use a unique user_agent to avoid 403 blocks

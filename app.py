@@ -30,7 +30,14 @@ else:
         # App Logo / Title
         # App Logo / Title
         try:
-             st.image("logo_nov.png", width=180)
+             if os.path.exists("logo_nov.png"):
+                 st.image(os.path.abspath("logo_nov.png"), width=180)
+             else:
+                 # Fallback to relative path if abspath fails in cloud env
+                 try:
+                     st.image("logo_nov.png", width=180)
+                 except:
+                     st.title("🏗️ NovApp")
         except:
              st.title("🏗️ NovApp")
              
@@ -189,10 +196,13 @@ else:
         col1, col2, col3, col4 = st.columns([3,1,5,1])
         with col2:
             # LOGO PIE DE PÁGINA (Dinámico)
-            if IMG_LOGO_ALAIN:
-                st.image(IMG_LOGO_ALAIN, width=150)
-            else:
-                st.info("Logo Dev")
+                try:
+                    if os.path.exists(IMG_LOGO_ALAIN):
+                        st.image(os.path.abspath(IMG_LOGO_ALAIN), width=150)
+                    else:
+                        st.info("Logo Dev")
+                except Exception:
+                    st.info("Logo Dev")
                 
         with col3:
             st.markdown("""

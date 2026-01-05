@@ -201,7 +201,7 @@ def render_ai_view():
         if btn_disabled:
             st.error("🚫 Límite diario alcanzado.")
         
-        if st.button("✨ Generar Análisis Ejecutivo", type="primary", disabled=btn_disabled, use_container_width=True):
+        if st.button("✨ Generar Análisis Ejecutivo", type="primary", disabled=btn_disabled, width="stretch"):
             with st.spinner("🤖 Analizando millones de datos..."):
                 try:
                     stats = ai_analysis.gather_global_stats()
@@ -256,7 +256,7 @@ def render_ai_view():
                 data=pdf_bytes,
                 file_name=f"Reporte_Ejecutivo_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
-                use_container_width=True
+                width="stretch"
             )
             
         else:
