@@ -4,6 +4,8 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import textwrap
+from geopy.geocoders import Nominatim
+import re
 
 def render_projects_overview():
     st.title("Gestión de Proyectos")
@@ -519,9 +521,40 @@ def render_project_details(project_id):
                     
                     # Budget & Geo
                     c4, c5, c6 = st.columns(3)
+                    
+                    # --- GEOLOCATION HELPER ---
+                    st.write("📍 **Ubicación Geográfica**")
+                    c_geo_input, c_geo_btn = st.columns([3, 1])
+                    address_search = c_geo_input.text_input("Buscar Dirección", placeholder="Ej: Av. Providencia 1234, Santiago")
+                    
+                    # Store lat/lon in session state if searching to update the number inputs dynamically
+                    if 'temp_proj_lat' not in st.session_state:
+                         st.session_state.temp_proj_lat = float(project.get('latitude', -33.4489))
+                    if 'temp_proj_lon' not in st.session_state:
+                         st.session_state.temp_proj_lon = float(project.get('longitude', -70.6693))
+
+                    if c_geo_btn.button("🔍 Ubicar", key='btn_geo_proj'):
+                        if address_search:
+                            try:
+                                geolocator = Nominatim(user_agent="nov_app_geo_agent", timeout=5)
+                                loc = geolocator.geocode(f"{address_search}, Chile") # Restrict to Chile mostly
+                                if loc:
+                                    st.session_state.temp_proj_lat = loc.latitude
+                                    st.session_state.temp_proj_lon = loc.longitude
+                                    st.success(f"Encontrado: {loc.address}")
+                                else:
+                                    st.warning("No encontrado. Intente ser más específico.")
+                            except Exception as e:
+                                st.error(f"Error: {e}")
+
                     u_budget = c4.number_input("Presupuesto Oficial ($)", value=float(project.get('budget_total', 0)), step=1000000.0, format="%.0f")
-                    u_lat = c5.number_input("Latitud", value=float(project.get('latitude', -33.4489)), format="%.6f")
-                    u_lon = c6.number_input("Longitud", value=float(project.get('longitude', -70.6693)), format="%.6f")
+                    
+                    # Use session state values for inputs if available
+                    current_lat = st.session_state.temp_proj_lat if 'temp_proj_lat' in st.session_state else float(project.get('latitude', -33.4489))
+                    current_lon = st.session_state.temp_proj_lon if 'temp_proj_lon' in st.session_state else float(project.get('longitude', -70.6693))
+                    
+                    u_lat = c5.number_input("Latitud", value=current_lat, format="%.6f", key="inp_lat")
+                    u_lon = c6.number_input("Longitud", value=current_lon, format="%.6f", key="inp_lon")
                     
                     if st.form_submit_button("💾 Guardar Cambios Globales", type="primary"):
                         data.update_project(project_id, u_name, u_desc, u_budget, u_start, u_end, u_status, u_lat, u_lon)
