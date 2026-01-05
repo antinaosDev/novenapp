@@ -102,7 +102,7 @@ def render_dashboard():
                 )
                 fig_gantt.update_yaxes(autorange="reversed") # Top to bottom
                 fig_gantt.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10))
-                st.plotly_chart(fig_gantt, use_container_width=True)
+                st.plotly_chart(fig_gantt, width="stretch")
             else:
                 st.info("No hay proyectos para visualizar.")
 
@@ -121,7 +121,7 @@ def render_dashboard():
                             "days_left": st.column_config.NumberColumn("Días Restantes", format="%d ⏳")
                         },
                         hide_index=True,
-                        use_container_width=True
+                        width="stretch"
                     )
                 else:
                     st.success("🎉 Sin vencimientos críticos próximos.")
@@ -154,7 +154,7 @@ def render_dashboard():
                     marker_color='#10b981'
                 ))
                 fig_bar.update_layout(barmode='group', height=300, margin=dict(t=10, b=10))
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_bar, width="stretch")
             else:
                 st.info("Faltan datos de presupuesto.")
 
@@ -172,7 +172,7 @@ def render_dashboard():
                     color_discrete_sequence=['#10b981', '#f59e0b', '#64748b']
                 )
                 fig_pie.update_layout(height=300, margin=dict(t=10, b=10), showlegend=True)
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width="stretch")
             else:
                 st.caption("Sin proyectos.")
 
@@ -194,7 +194,7 @@ def render_dashboard():
                     "description": "Detalle"
                 },
                 hide_index=True,
-                use_container_width=True
+                width="stretch"
             )
         else:
             st.caption("No hay gastos recientes.")

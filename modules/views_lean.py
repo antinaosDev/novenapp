@@ -252,6 +252,6 @@ def render_lean():
             )
             fig.update_traces(textposition='outside')
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.info("No hay historial de tareas antiguas.")
