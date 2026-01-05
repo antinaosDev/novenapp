@@ -184,18 +184,21 @@ else:
         views_admin.render_admin_panel()
 
     # --- Footer ---
-    st.divider()
+    st.markdown("---")
     with st.container():
         col1, col2, col3, col4 = st.columns([3,1,5,1])
         with col2:
+            # LOGO PIE DE PÁGINA (Dinámico)
             if IMG_LOGO_ALAIN:
-                try:
-                    st.image(IMG_LOGO_ALAIN, width=120)
-                except Exception:
-                    st.caption("NovApp Dev")
+                st.image(IMG_LOGO_ALAIN, width=150)
             else:
-                st.caption("NovApp Dev")
+                st.info("Logo Dev")
                 
         with col3:
-            st.caption("Aplicación desarrollada por **Alain Antinao Sepúlveda** | v1.2.7")
-            st.caption("📧 alain.antinao.s@gmail.com")
+            st.markdown("""
+                <div style='text-align: left; color: #888888; font-size: 16px; padding-bottom: 20px;'>
+                    💼 Aplicación desarrollada por <strong>Alain Antinao Sepúlveda</strong> <br>
+                    📧 Contacto: <a href="mailto:alain.antinao.s@gmail.com" style="color: #006DB6;">alain.antinao.s@gmail.com</a> <br>
+                    🌐 Más información en: <a href="https://alain-antinao-s.notion.site/Alain-C-sar-Antinao-Sep-lveda-1d20a081d9a980ca9d43e283a278053e" target="_blank" style="color: #006DB6;">Mi página personal</a>
+                </div>
+            """, unsafe_allow_html=True)
