@@ -30,14 +30,7 @@ else:
         # App Logo / Title
         # App Logo / Title
         try:
-             if os.path.exists("logo_nov.png"):
-                 st.image(os.path.abspath("logo_nov.png"), width=180)
-             else:
-                 # Fallback to relative path if abspath fails in cloud env
-                 try:
-                     st.image("logo_nov.png", width=180)
-                 except:
-                     st.title("🏗️ NovApp")
+             st.image("logo_nov.png", width=180)
         except:
              st.title("🏗️ NovApp")
              
@@ -191,24 +184,21 @@ else:
         views_admin.render_admin_panel()
 
     # --- Footer ---
-    st.markdown("---")
+    st.divider()
     with st.container():
         col1, col2, col3, col4 = st.columns([3,1,5,1])
         with col2:
-            # LOGO PIE DE PÁGINA (Dinámico)
+            if IMG_LOGO_ALAIN:
                 try:
-                    if os.path.exists(IMG_LOGO_ALAIN):
-                        st.image(os.path.abspath(IMG_LOGO_ALAIN), width=150)
-                    else:
-                        st.info("Logo Dev")
-                except Exception:
-                    st.info("Logo Dev")
+                    st.image(IMG_LOGO_ALAIN, width=120)
+                except:
+                    st.caption("NovApp Dev")
+            else:
+                st.caption("NovApp Dev")
                 
         with col3:
             st.markdown("""
-                <div style='text-align: left; color: #888888; font-size: 16px; padding-bottom: 20px;'>
-                    💼 Aplicación desarrollada por <strong>Alain Antinao Sepúlveda</strong> <br>
-                    📧 Contacto: <a href="mailto:alain.antinao.s@gmail.com" style="color: #006DB6;">alain.antinao.s@gmail.com</a> <br>
-                    🌐 Más información en: <a href="https://alain-antinao-s.notion.site/Alain-C-sar-Antinao-Sep-lveda-1d20a081d9a980ca9d43e283a278053e" target="_blank" style="color: #006DB6;">Mi página personal</a>
-                </div>
-            """, unsafe_allow_html=True)
+            **💼 Aplicación desarrollada por Alain Antinao Sepúlveda**  
+            📧 Contacto: alain.antinao.s@gmail.com  
+            🌐 Más información en: [Mi página personal](https://www.linkedin.com/in/alain-antinao-sep%C3%BAlveda-a2a608226/)
+            """)

@@ -594,11 +594,19 @@ def render_project_details(project_id):
                     u_budget = c4.number_input("Presupuesto Oficial ($)", value=float(project.get('budget_total', 0)), step=1000000.0, format="%.0f")
                     
                     # Use session state values for inputs if available
-                    current_lat = st.session_state.temp_proj_lat if 'temp_proj_lat' in st.session_state else float(project.get('latitude', -33.4489))
-                    current_lon = st.session_state.temp_proj_lon if 'temp_proj_lon' in st.session_state else float(project.get('longitude', -70.6693))
+                    if 'inp_lat' not in st.session_state:
+                         st.session_state.inp_lat = float(project.get('latitude', -33.4489))
+                    if 'inp_lon' not in st.session_state:
+                         st.session_state.inp_lon = float(project.get('longitude', -70.6693))
                     
-                    u_lat = c5.number_input("Latitud", value=current_lat, format="%.6f", key="inp_lat")
-                    u_lon = c6.number_input("Longitud", value=current_lon, format="%.6f", key="inp_lon")
+                    # Update from temp if search happened
+                    if 'temp_proj_lat' in st.session_state:
+                         st.session_state.inp_lat = st.session_state.temp_proj_lat
+                    if 'temp_proj_lon' in st.session_state:
+                         st.session_state.inp_lon = st.session_state.temp_proj_lon
+
+                    u_lat = c5.number_input("Latitud", format="%.6f", key="inp_lat")
+                    u_lon = c6.number_input("Longitud", format="%.6f", key="inp_lon")
                     
                     if st.form_submit_button("💾 Guardar Cambios Globales", type="primary"):
                         data.update_project(project_id, u_name, u_desc, u_budget, u_start, u_end, u_status, u_lat, u_lon)
