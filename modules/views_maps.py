@@ -247,7 +247,16 @@ def render_project_map():
         else:
             st.info("Sin asignaciones de personal.")
 
-    # Map Container
+    # --- Map Color Logic ---
+    def get_status_color(status):
+        # RGBA format
+        if status == 'Activo': return [34, 197, 94, 200]    # Green
+        if status == 'Pausado': return [249, 115, 22, 200]  # Orange
+        if status == 'Completado': return [59, 130, 246, 200] # Blue
+        if status == 'En Cierre': return [168, 85, 247, 200] # Purple
+        return [100, 116, 139, 200] # Gray (Default)
+
+    df_projects['color'] = df_projects['status'].apply(get_status_color)
     with st.container(border=True):
         st.subheader("Mapa Global")
         
@@ -268,20 +277,30 @@ def render_project_map():
             "ScatterplotLayer",
             data=df_projects,
             get_position='[longitude, latitude]',
-            get_color='[20, 184, 166, 160]', # Teal color
-            get_radius=150,
+            get_color='color',
+            get_radius=200,
             pickable=True,
             auto_highlight=True,
         )
         
         r = pdk.Deck(
-            map_style=None,
+            map_style=None, # Light map
             initial_view_state=view_state,
             layers=[layer],
             tooltip={"html": "<b>{name}</b><br>Estado: {status}"}
         )
         
-        st.pydeck_chart(r)
+        col_map, col_legend = st.columns([5, 1])
+        with col_map:
+             st.pydeck_chart(r)
+        
+        with col_legend:
+             st.markdown("#### Leyenda")
+             st.markdown("🟢 **Activo**")
+             st.markdown("🟠 **Pausado**")
+             st.markdown("🔵 **Completado**")
+             st.markdown("🟣 **En Cierre**")
+             st.markdown("⚪ **Otros**")
     
     with st.expander("📍 Detalle de Coordenadas", expanded=False):
         st.dataframe(
