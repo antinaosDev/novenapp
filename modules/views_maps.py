@@ -250,17 +250,49 @@ def render_project_map():
     # Map Container
     with st.container(border=True):
         st.subheader("Mapa Global")
-        st.map(df_projects, size=20, color='#10b981')
+        
+        # Calculate Centroid for Auto-Centering
+        avg_lat = df_projects['latitude'].mean()
+        avg_lon = df_projects['longitude'].mean()
+        
+        import pydeck as pdk
+        
+        view_state = pdk.ViewState(
+            latitude=avg_lat,
+            longitude=avg_lon,
+            zoom=11,
+            pitch=40,
+        )
+        
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=df_projects,
+            get_position='[longitude, latitude]',
+            get_color='[20, 184, 166, 160]', # Teal color
+            get_radius=150,
+            pickable=True,
+            auto_highlight=True,
+        )
+        
+        r = pdk.Deck(
+            map_style=None,
+            initial_view_state=view_state,
+            layers=[layer],
+            tooltip={"html": "<b>{name}</b><br>Estado: {status}"}
+        )
+        
+        st.pydeck_chart(r)
     
     with st.expander("📍 Detalle de Coordenadas", expanded=False):
         st.dataframe(
-            df_projects[['name', 'latitude', 'longitude']], 
+            df_projects[['name', 'latitude', 'longitude', 'status']], 
             hide_index=True, 
             width='stretch',
             column_config={
                 "name": "Proyecto",
                 "latitude": "Latitud",
-                "longitude": "Longitud"
+                "longitude": "Longitud",
+                "status": "Estado"
             }
         )
 

@@ -7,8 +7,8 @@ def get_project_locations():
     # We filter status = 'Activo' and select cols.
     projects = data.get_projects()
     if not projects.empty:
-        # Ensure status is Activo
-        projects = projects[projects['status'] == 'Activo']
+        # Return all projects with coordinates (regardless of status)
+        # projects = projects[projects['status'] == 'Activo']
         
         # Ensure lat/long exist (should due to schema)
         if 'latitude' in projects.columns and 'longitude' in projects.columns:
