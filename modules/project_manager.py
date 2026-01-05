@@ -40,7 +40,8 @@ def render_projects_overview():
                     if c_btn.form_submit_button("🔍 Buscar"):
                         if new_addr:
                             try:
-                                geolocator = Nominatim(user_agent="nov_app_geo_new", timeout=5)
+                                # Use a unique user_agent to avoid 403 blocks
+                                geolocator = Nominatim(user_agent="nov_app_management_system_2026", timeout=5)
                                 loc = geolocator.geocode(f"{new_addr}, Chile")
                                 if loc:
                                     st.session_state.new_p_lat = loc.latitude
@@ -547,7 +548,8 @@ def render_project_details(project_id):
                 if c_geo_btn.button("🔍 Ubicar", key='btn_geo_proj'):
                     if address_search:
                         try:
-                            geolocator = Nominatim(user_agent="nov_app_geo_agent", timeout=5)
+                            # Use a unique user_agent to avoid 403 blocks
+                            geolocator = Nominatim(user_agent="nov_app_management_system_2026", timeout=5)
                             loc = geolocator.geocode(f"{address_search}, Chile") # Restrict to Chile mostly
                             if loc:
                                 st.session_state.temp_proj_lat = loc.latitude
