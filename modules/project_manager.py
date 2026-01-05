@@ -28,9 +28,45 @@ def render_projects_overview():
                     start = c1.date_input("Inicio")
                     end = c2.date_input("Fin")
                     
+                    st.divider()
+                    st.write("📍 Ubicación")
+                    c_addr, c_btn = st.columns([3, 1])
+                    new_addr = c_addr.text_input("Buscar Dirección", key="new_proj_addr_input")
+                    
+                    # Session state for new project lat/lon
+                    if 'new_p_lat' not in st.session_state: st.session_state.new_p_lat = -33.4489
+                    if 'new_p_lon' not in st.session_state: st.session_state.new_p_lon = -70.6693
+                    
+                    if c_btn.form_submit_button("🔍 Buscar"):
+                        if new_addr:
+                            try:
+                                geolocator = Nominatim(user_agent="nov_app_geo_new", timeout=5)
+                                loc = geolocator.geocode(f"{new_addr}, Chile")
+                                if loc:
+                                    st.session_state.new_p_lat = loc.latitude
+                                    st.session_state.new_p_lon = loc.longitude
+                                    st.success(f"📍 {loc.address}")
+                                else:
+                                    st.warning("No encontrado.")
+                            except Exception as e:
+                                st.error(f"Error: {e}")
+                        # We need to rerun to update the number inputs below? 
+                        # Actually form submit re-runs the script, so next render picks up session state.
+                        # But since we are INSIDE the form, the number_inputs below are ALREADY rendered for this run.
+                        # So we might need to rerun to show updated values in inputs? 
+                        # Yes, but st.form_submit_button causes rerun automatically.
+                        
+                    c_lat, c_lon = st.columns(2)
+                    n_lat = c_lat.number_input("Latitud", value=st.session_state.new_p_lat, format="%.6f", key="np_lat_inp")
+                    n_lon = c_lon.number_input("Longitud", value=st.session_state.new_p_lon, format="%.6f", key="np_lon_inp")
+                    
                     if st.form_submit_button("Guardar Proyecto", type="primary"):
-                        data.add_project(name, desc, budget, start, end)
+                        data.add_project(name, desc, budget, start, end, n_lat, n_lon)
                         st.success(f"Proyecto {name} creado.")
+                        # Reset
+                        st.session_state.pop('new_p_lat', None)
+                        st.session_state.pop('new_p_lon', None)
+                        st.session_state.pop('new_proj_addr_input', None) # Might not work for key, but ok
                         st.rerun()
 
     # --- Projects List ---

@@ -51,13 +51,16 @@ def init_db():
 # --- CRUD Functions ---
 
 # Projects
-def add_project(name, description, budget, start_date, end_date):
+def add_project(name, description, budget, start_date, end_date, lat=-33.4489, lon=-70.6693):
     data = {
         "name": name,
         "description": description,
         "budget_total": budget,
         "start_date": str(start_date),
-        "end_date": str(end_date)
+        "end_date": str(end_date),
+        "latitude": lat,
+        "longitude": lon,
+        "status": "Activo"
     }
     supabase.table("projects").insert(data).execute()
 
