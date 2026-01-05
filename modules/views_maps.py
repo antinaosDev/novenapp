@@ -260,16 +260,22 @@ def render_project_map():
     with st.container(border=True):
         st.subheader("Mapa Global")
         
-        # Calculate Centroid for Auto-Centering
-        avg_lat = df_projects['latitude'].mean()
-        avg_lon = df_projects['longitude'].mean()
+        # Calculate Center: User requested LAST registered location
+        # As 'id' implies chronological order, we take the row with max ID
+        if not df_projects.empty:
+            last_project = df_projects.loc[df_projects['id'].idxmax()]
+            center_lat = last_project['latitude']
+            center_lon = last_project['longitude']
+        else:
+             center_lat = -33.4489 # Santiago Default
+             center_lon = -70.6693
         
         import pydeck as pdk
         
         view_state = pdk.ViewState(
-            latitude=avg_lat,
-            longitude=avg_lon,
-            zoom=11,
+            latitude=center_lat,
+            longitude=center_lon,
+            zoom=12, # Slightly zoomed in on the latest
             pitch=40,
         )
         
