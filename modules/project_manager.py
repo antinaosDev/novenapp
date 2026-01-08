@@ -7,6 +7,36 @@ import textwrap
 from geopy.geocoders import Nominatim
 import re
 
+# Helper for Geocoding with Fallback
+def smart_geocode(address_input):
+    """
+    Attempts to find a location.
+    1. Exact match with country.
+    2. Fallback to the last part of the address (likely Commune/City).
+    Returns (latitude, longitude, address_found) or (None, None, None).
+    """
+    try:
+        geolocator = Nominatim(user_agent="nov_app_management_system_2026", timeout=5)
+        
+        # 1. Try Exact
+        loc = geolocator.geocode(f"{address_input}, Chile")
+        if loc:
+            return loc.latitude, loc.longitude, loc.address
+            
+        # 2. Try Fallback (Split by comma)
+        # e.g. "Reposición Sede, Cholchol" -> try "Cholchol, Chile"
+        parts = address_input.split(',')
+        if len(parts) > 1:
+            potential_commune = parts[-1].strip()
+            loc_fallback = geolocator.geocode(f"{potential_commune}, Chile")
+            if loc_fallback:
+                return loc_fallback.latitude, loc_fallback.longitude, loc_fallback.address
+                
+        return None, None, None
+    except Exception as e:
+        print(f"Geocoding error: {e}")
+        return None, None, None
+
 def render_projects_overview():
     st.title("Gestión de Proyectos")
     
@@ -39,18 +69,13 @@ def render_projects_overview():
                     
                     if c_btn.form_submit_button("🔍 Buscar"):
                         if new_addr:
-                            try:
-                                # Use a unique user_agent to avoid 403 blocks
-                                geolocator = Nominatim(user_agent="nov_app_management_system_2026", timeout=5)
-                                loc = geolocator.geocode(f"{new_addr}, Chile")
-                                if loc:
-                                    st.session_state.new_p_lat = loc.latitude
-                                    st.session_state.new_p_lon = loc.longitude
-                                    st.success(f"📍 {loc.address}")
-                                else:
-                                    st.warning("No encontrado.")
-                            except Exception as e:
-                                st.error(f"Error: {e}")
+                            lat, lon, addr = smart_geocode(new_addr)
+                            if lat and lon:
+                                st.session_state.new_p_lat = lat
+                                st.session_state.new_p_lon = lon
+                                st.success(f"📍 {addr}")
+                            else:
+                                st.warning("No encontrado. Intente con 'Comuna' si falla.")
                         # We need to rerun to update the number inputs below? 
                         # Actually form submit re-runs the script, so next render picks up session state.
                         # But since we are INSIDE the form, the number_inputs below are ALREADY rendered for this run.
@@ -560,21 +585,17 @@ def render_project_details(project_id):
                 
                 if search_submitted:
                     if address_search:
-                        try:
-                            # Use a unique user_agent to avoid 403 blocks
-                            geolocator = Nominatim(user_agent="nov_app_management_system_2026", timeout=5)
-                            loc = geolocator.geocode(f"{address_search}, Chile") # Restrict to Chile mostly
-                            if loc:
-                                st.session_state.temp_proj_lat = loc.latitude
-                                st.session_state.temp_proj_lon = loc.longitude
-                                # FIX: Update widget keys directly to force input update
-                                st.session_state['inp_lat'] = loc.latitude
-                                st.session_state['inp_lon'] = loc.longitude
-                                st.success(f"Encontrado: {loc.address}")
-                            else:
-                                st.warning("No encontrado. Intente ser más específico.")
-                        except Exception as e:
-                            st.error(f"Error: {e}")
+                        # Use Smart Geocode Helper
+                        lat, lon, addr = smart_geocode(address_search)
+                        if lat and lon:
+                            st.session_state.temp_proj_lat = lat
+                            st.session_state.temp_proj_lon = lon
+                            # FIX: Update widget keys directly to force input update
+                            st.session_state['inp_lat'] = lat
+                            st.session_state['inp_lon'] = lon
+                            st.success(f"Encontrado: {addr}")
+                        else:
+                            st.warning("No encontrado. Intente con 'Comuna, Ciudad'.")
 
                 with st.form("edit_project_config"):
                     # Core Fields

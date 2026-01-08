@@ -1,23 +1,31 @@
 from geopy.geocoders import Nominatim
+import time
 
-geolocator = Nominatim(user_agent="nov_app_management_system_test_debug", timeout=10)
-
-queries = [
-    "Reposición sede social numero 14, Cholchol, Chile",
-    "Cholchol, Chile",
-    "Sede Social, Cholchol, Chile",
-    "Calle Principal, Cholchol, Chile"
-]
-
-print(f"{'Query':<50} | {'Address Found':<50} | {'Lat/Lon'}")
-print("-" * 120)
-
-for q in queries:
+def test_geocoding(address):
+    print(f"Testing: '{address}'")
     try:
-        loc = geolocator.geocode(q)
+        geolocator = Nominatim(user_agent="nov_app_management_system_test_2026", timeout=5)
+        # Verify what happens with the exact string the user likely used
+        loc = geolocator.geocode(f"{address}, Chile")
         if loc:
-            print(f"{q:<50} | {loc.address[:50]:<50} | {loc.latitude:.4f}, {loc.longitude:.4f}")
+            print(f"FOUND: {loc.address}")
+            print(f"COORDS: {loc.latitude}, {loc.longitude}")
+            
+            # Check if it is Santiago
+            if -33.5 < loc.latitude < -33.3 and -70.8 < loc.longitude < -70.5:
+                print("-> RESOLVED TO SANTIAGO")
+            else:
+                print("-> RESOLVED TO OTHER")
         else:
-            print(f"{q:<50} | {'Not Found':<50} | -")
+            print("NOT FOUND")
+            
     except Exception as e:
-        print(f"{q:<50} | Error: {e}")
+        print(f"ERROR: {e}")
+    print("-" * 30)
+
+# Cases
+test_geocoding("Reposición sede social numero 14, Cholchol") # User case
+test_geocoding("Cholchol") # Fallback target
+test_geocoding("Temuco") # Control
+test_geocoding("Calle Falsa 123, Santiago") # Control
+test_geocoding("Construcción Plaza, Arica") # Possible similar case
