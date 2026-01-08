@@ -300,6 +300,7 @@ def render_project_details(project_id):
             # --- Chart Logic (Fixed) ---
             phases['start_date'] = pd.to_datetime(phases['start_date'])
             phases['end_date'] = pd.to_datetime(phases['end_date'])
+            phases = phases.sort_values(by=['start_date', 'name'], ascending=[True, True])
             
             fig = px.timeline(phases, x_start="start_date", x_end="end_date", y="name", color="status", title=None)
             fig.update_yaxes(autorange="reversed")
