@@ -329,11 +329,10 @@ def get_kpis():
     if not po_df.empty:
         # Filter out Rejected
         total_spent = po_df[po_df['status'] != 'Rechazada']['total_amount'].sum()
-        # Also sum 'Pendiente'? Yes, usually 'Ejecutado' includes pending commitments in construction (Comprometido).
-        # Or strictly 'Aprobada'? The Project Manager view used: status != 'Rechazada' (meaning Pending + Approved).
-        # We will match that logic.
+        pending_po_amount = po_df[po_df['status'] == 'Pendiente']['total_amount'].sum()
     else:
         total_spent = 0
+        pending_po_amount = 0
 
     # --- 2. Lean (Global Average PPC) ---
     # Fetch all tasks to calc global PPC (Week-based approximation)
@@ -359,6 +358,7 @@ def get_kpis():
     return {
         "total_spent": total_spent,
         "total_budget": total_budget,
+        "pending_po_amount": pending_po_amount,
         "global_ppc": global_ppc,
         "active_subs": active_subs,
         "total_subs": total_subs,
