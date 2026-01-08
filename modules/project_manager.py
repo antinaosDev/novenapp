@@ -292,6 +292,7 @@ def render_project_details(project_id):
     
     with tabs[0]:
         st.subheader("Línea de Tiempo")
+        st.caption("Para ver la distribución completa de tareas y su estado, vea el gráfico en pantalla completa. La vista actual es una vista condensada.")
         
         # Refresh phases
         phases = data.get_phases(project_id)
