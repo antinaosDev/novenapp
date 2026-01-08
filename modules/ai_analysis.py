@@ -13,7 +13,7 @@ def gather_global_stats():
     # 1. Projects
     projects = data.get_projects()
     stats['total_projects'] = len(projects)
-    stats['active_projects'] = len(projects[projects['status'] == 'En Ejecución']) if not projects.empty else 0
+    stats['active_projects'] = len(projects[projects['status'].isin(['En Ejecución', 'Activo'])]) if not projects.empty else 0
     stats['total_budget'] = projects['budget_total'].sum() if not projects.empty else 0
     
     # 2. Finance
@@ -31,7 +31,7 @@ def gather_global_stats():
     
     # 4. Tenders
     tenders = licitaciones.get_tenders()
-    stats['tenders_active'] = len(tenders[tenders['status'] == 'Activa']) if not tenders.empty else 0
+    stats['tenders_active'] = len(tenders[tenders['status'].isin(['Activa', 'Publicada', 'En Licitación'])]) if not tenders.empty else 0
     stats['tenders_awarded'] = len(tenders[tenders['status'] == 'Adjudicada']) if not tenders.empty else 0
     
     # 5. Quality
