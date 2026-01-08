@@ -905,8 +905,8 @@ def add_phase(project_id, name, start, end):
     data = {"project_id": project_id, "name": name, "start_date": str(start), "end_date": str(end)}
     supabase.table("phases").insert(data).execute()
 
-def update_phase(phase_id, name, start, end):
-    data = {"name": name, "start_date": str(start), "end_date": str(end)}
+def update_phase(phase_id, name, start, end, status="Pendiente"):
+    data = {"name": name, "start_date": str(start), "end_date": str(end), "status": status}
     supabase.table("phases").update(data).eq("id", phase_id).execute()
 
 def delete_phase(phase_id):

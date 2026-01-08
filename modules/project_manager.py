@@ -348,8 +348,15 @@ def render_project_details(project_id):
                         u_start = c1.date_input("Inicio", value=d_s)
                         u_end = c2.date_input("Fin", value=d_e)
                         
+                        # Status Update
+                        current_status = row_ph.get('status', 'Pendiente')
+                        status_opts = ["Pendiente", "En Progreso", "Completada", "Atrasada"]
+                        idx = status_opts.index(current_status) if current_status in status_opts else 0
+                        
+                        u_status = st.selectbox("Estado", status_opts, index=idx)
+                        
                         if st.form_submit_button("Guardar Cambios"):
-                            data.update_phase(phase_to_edit, u_name, u_start, u_end)
+                            data.update_phase(phase_to_edit, u_name, u_start, u_end, u_status)
                             st.success("Fase actualizada")
                             st.rerun()
                             
