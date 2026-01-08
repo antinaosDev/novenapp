@@ -151,7 +151,7 @@ def create_pdf_report_v2(report_text, stats):
     if sections.get('extra'):
          add_section_to_pdf("Análisis Adicional AI", sections['extra'])
     
-    return pdf.output(dest='S')
+    return bytes(pdf.output())
 
 # --- Main View ---
 def render_ai_view():
