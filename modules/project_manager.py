@@ -403,8 +403,11 @@ def render_project_details(project_id):
             fig = px.timeline(phases, x_start="start_date", x_end="end_date", y="name", color="status", title=None)
             fig.update_yaxes(autorange="reversed")
             fig.update_xaxes(tickformat="%Y-%m-%d") # Fix axis labels
+            # Dynamic Height: Base 100px + 50px per item to ensure visibility without scrolling
+            dyn_height = max(350, len(phases) * 50 + 100)
+            
             fig.update_layout(
-                margin=dict(t=10, l=10, r=10, b=10), height=350,
+                margin=dict(t=10, l=10, r=10, b=10), height=dyn_height,
                 font=dict(family="sans-serif", color="#64748b")
             )
             st.plotly_chart(fig, width='stretch')
