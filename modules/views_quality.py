@@ -117,8 +117,26 @@ def render_quality():
     with tab_book:
         st.subheader("Registro de Bitácora")
         
+        # Helper: Display Informal Comments (Bitácora Simple from Projects)
+        try:
+            comments = data.get_comments(project_id)
+            if not comments.empty:
+                with st.expander("💬 Notas y Comentarios (Vista Proyectos)", expanded=True):
+                    st.caption("Estos registros provienen de la pestaña 'Bitácora' en la sección de Proyectos.")
+                    for _, c in comments.iterrows():
+                        with st.chat_message("user"): 
+                            st.write(f"**{c['username']}** - {c['timestamp']}")
+                            st.write(c['content'])
+            else:
+                # Only show info if strict quality logs are also empty later, or just keep it clean
+                pass
+        except Exception as e:
+            st.error(f"Error cargando comentarios de proyecto: {e}")
+
+        st.divider()
+
         # New Log Form
-        with st.expander("➕ Nueva Entrada Bitácora", expanded=False):
+        with st.expander("➕ Nueva Entrada Bitácora Técnica (Formal)", expanded=False):
             with st.container(border=True):
                 with st.form("new_log_form"):
                     st.markdown("**Registrar en Libro de Obras**")
