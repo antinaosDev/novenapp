@@ -87,7 +87,7 @@ def render_dashboard():
     total_budget = kpis['total_budget']
     total_spent = kpis['total_spent']
     global_utilization = (total_spent / total_budget * 100) if total_budget > 0 else 0
-    c2.metric("Ejecución Presupuestal", f"{global_utilization:.1f}%", delta=f"${total_spent:,.0f} gastado", delta_color="inverse")
+    c2.metric("Ejecución Presupuestal", f"{global_utilization:.1f}%", delta=f"${total_spent:,.0f} / ${total_budget:,.0f} Total", delta_color="inverse")
     
     # Pending POs
     c3.metric("Órdenes Pendientes", f"${kpis.get('pending_po_amount', 0):,.0f}", delta=f"{alerts_data[0]['message'] if alerts_data else 'Sin atrasos'}", delta_color="off")
