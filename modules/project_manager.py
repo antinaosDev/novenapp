@@ -336,7 +336,9 @@ def render_project_details(project_id):
                 phases['end'] = pd.to_datetime(phases['end_date'])
                 phases = phases.sort_values('start')
                 
-                fig2, ax2 = plt.subplots(figsize=(10, len(phases)*0.8 + 2))
+                # Increased height multiplier for better spacing (0.8 -> 1.0) and added min height
+                fig_height = max(4, len(phases) * 1.0 + 2)
+                fig2, ax2 = plt.subplots(figsize=(10, fig_height))
                 
                 # Create Bars
                 for i, row in phases.iterrows():
@@ -388,7 +390,7 @@ def render_project_details(project_id):
     
     with tabs[0]:
         st.subheader("Línea de Tiempo")
-        st.caption("Para ver la distribución completa de tareas y su estado, vea el gráfico en pantalla completa. La vista actual es una vista condensada.")
+        # Subtitle removed as requested
         
         # Refresh phases
         phases = data.get_phases(project_id)
@@ -514,7 +516,7 @@ def render_project_details(project_id):
             
         st.divider()
         st.subheader("Solicitud de Compra")
-        st.caption("Crea una orden pendiente para validación en Finanzas.")
+        st.caption("Genera una solicitud de gasto que deberá ser validada en el módulo 'Finanzas' (Menú Lateral).")
         
         with st.container(border=True):
             with st.form("project_po_request"):
