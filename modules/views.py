@@ -25,22 +25,48 @@ def render_dashboard():
         projects_df['risk_deadline'] = projects_df['days_left'] < 30
     
     # 2. Budget vs Real (Merge)
-    if not projects_df.empty and not expenses_df.empty:
-        exp_by_proj = expenses_df.groupby('project_id')['amount'].sum().reset_index()
+    # 2. Budget vs Real (Merge)
+    if not projects_df.empty:
+        # A. Expenses (Petty Cash/Small expenses)
+        if not expenses_df.empty:
+             exp_grouped = expenses_df.groupby('project_id')['amount'].sum().reset_index()
+             exp_grouped.columns = ['project_id', 'total_exp']
+        else:
+             exp_grouped = pd.DataFrame(columns=['project_id', 'total_exp'])
+        
+        # B. Purchase Orders (Major spending)
+        pos_df = data.get_purchase_orders()
+        if not pos_df.empty:
+             # Filter valid POs
+             valid_pos = pos_df[pos_df['status'] != 'Rechazada']
+             pos_grouped = valid_pos.groupby('project_id')['total_amount'].sum().reset_index()
+             pos_grouped.columns = ['project_id', 'total_pos']
+        else:
+             pos_grouped = pd.DataFrame(columns=['project_id', 'total_pos'])
+
+        # C. Combine
+        # Merge Expenses + POs
+        if not exp_grouped.empty or not pos_grouped.empty:
+             # Outer join to keep all project costs
+             costs_merged = pd.merge(exp_grouped, pos_grouped, on='project_id', how='outer').fillna(0)
+             costs_merged['amount'] = costs_merged['total_exp'] + costs_merged['total_pos']
+        else:
+             costs_merged = pd.DataFrame(columns=['project_id', 'amount'])
+
+        # D. Final Merge with Projects
         budget_analysis = pd.merge(
             projects_df[['id', 'name', 'budget_total', 'status']], 
-            exp_by_proj, 
+            costs_merged[['project_id', 'amount']], 
             left_on='id', 
             right_on='project_id', 
             how='left'
         )
         budget_analysis['amount'] = budget_analysis['amount'].fillna(0)
         budget_analysis['utilization'] = (budget_analysis['amount'] / budget_analysis['budget_total']) * 100
+        # Sanitize Inf/NaN if budget is 0
+        budget_analysis['utilization'] = budget_analysis['utilization'].fillna(0)
     else:
-        budget_analysis = projects_df.copy() if not projects_df.empty else pd.DataFrame()
-        if not budget_analysis.empty:
-             budget_analysis['amount'] = 0
-             budget_analysis['utilization'] = 0
+        budget_analysis = pd.DataFrame()
 
     # --- Header ---
     c_title, c_date = st.columns([4, 1])

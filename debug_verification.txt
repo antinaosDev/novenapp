@@ -1,0 +1,31 @@
+--- VERIFICATION START ---
+Projects:
+   id                                        name  budget_total
+0  11  Reposición sede social numero 14, Cholchol    92435687.0
+
+Expenses Count: 0
+Fetching Purchase Orders...
+POs Found: 11
+POs Head:
+   id  project_id  total_amount  status
+0  18          11     1041697.0  Pagada
+1  14          11      286500.0  Pagada
+2  15          11      809600.0  Pagada
+3  16          11      225872.0  Pagada
+4  17          11     1794599.0  Pagada
+
+POs Grouped:
+   project_id  total_pos
+0          11  7598825.0
+
+Combined Costs:
+   project_id  total_exp  total_pos     amount
+0          11          0  7598825.0  7598825.0
+
+Final Analysis:
+                                         name  budget_total     amount
+0  Reposición sede social numero 14, Cholchol    92435687.0  7598825.0
+
+SUCCESS: Found projects with Gasto Real > 0.
+
+--- VERIFICATION END ---

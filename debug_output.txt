@@ -1,0 +1,25 @@
+--- DEBUG START (File) ---
+Fetching Projects...
+Projects count: 1
+Projects Head:
+   id                                        name                   description  budget_total  start_date    end_date  status   latitude  longitude
+0  11  Reposición sede social numero 14, Cholchol  Construcción de sede social     92435687.0  2025-11-24  2026-02-03  Activo -38.602559 -72.847663
+Projects Dtypes:
+id                int64
+name             object
+description      object
+budget_total    float64
+start_date       object
+end_date         object
+status           object
+latitude        float64
+longitude       float64
+dtype: object
+Projects ID type: int64
+
+Fetching Expenses...
+Expenses count: 0
+Expenses DF is empty.
+
+One of the dataframes is empty or failed to load.
+--- DEBUG END ---
