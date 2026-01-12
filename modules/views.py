@@ -43,27 +43,17 @@ def render_dashboard():
         else:
              pos_grouped = pd.DataFrame(columns=['project_id', 'total_pos'])
 
-        # C. Budget Items (Labor/Internal Costs mapped as Items)
-        # Added to reflect "Mano de Obra" or other allocated costs as "Executed" per user workflow
-        bud_items_df = data.get_all_budget_items()
-        if not bud_items_df.empty:
-            bud_grouped = bud_items_df.groupby('project_id')['estimated_amount'].sum().reset_index()
-            bud_grouped.columns = ['project_id', 'total_items']
+        # C. Combine
+        # Merge Expenses + POs
+        # User requested to ONLY consider Expenses and POs for "Real Execution", excluding Allocated Items (Planning)
+        if not exp_grouped.empty or not pos_grouped.empty:
+             # Outer join to keep all project costs
+             costs_merged = pd.merge(exp_grouped, pos_grouped, on='project_id', how='outer').fillna(0)
+             costs_merged['amount'] = costs_merged['total_exp'] + costs_merged['total_pos']
         else:
-            bud_grouped = pd.DataFrame(columns=['project_id', 'total_items'])
+             costs_merged = pd.DataFrame(columns=['project_id', 'amount'])
 
-        # D. Combine All Costs
-        # Merge Expenses + POs + BudgetItems
-        from functools import reduce
-        dfs_to_merge = [exp_grouped, pos_grouped, bud_grouped]
-        
-        # Merge all on project_id using outer join
-        costs_merged = reduce(lambda left, right: pd.merge(left, right, on='project_id', how='outer'), dfs_to_merge).fillna(0)
-        
-        # Sum all components
-        costs_merged['amount'] = costs_merged['total_exp'] + costs_merged['total_pos'] + costs_merged['total_items']
-
-        # E. Final Merge with Projects
+        # D. Final Merge with Projects
         budget_analysis = pd.merge(
             projects_df[['id', 'name', 'budget_total', 'status']], 
             costs_merged[['project_id', 'amount']], 
