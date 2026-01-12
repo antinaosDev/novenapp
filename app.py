@@ -200,5 +200,5 @@ else:
             st.markdown("""
             **💼 Aplicación desarrollada por Alain Antinao Sepúlveda**  
             📧 Contacto: alain.antinao.s@gmail.com  
-            🌐 Más información en: [Mi página personal](https://www.linkedin.com/in/alain-antinao-sep%C3%BAlveda-a2a608226/)
+            🌐 Más información en: [Mi página personal](https://alain-antinao-s.notion.site/Alain-C-sar-Antinao-Sep-lveda-1d20a081d9a980ca9d43e283a278053e)
             """)
