@@ -25,7 +25,6 @@ def render_dashboard():
         projects_df['risk_deadline'] = projects_df['days_left'] < 30
     
     # 2. Budget vs Real (Merge)
-    # 2. Budget vs Real (Merge)
     if not projects_df.empty:
         # A. Expenses (Petty Cash/Small expenses)
         if not expenses_df.empty:
@@ -44,16 +43,27 @@ def render_dashboard():
         else:
              pos_grouped = pd.DataFrame(columns=['project_id', 'total_pos'])
 
-        # C. Combine
-        # Merge Expenses + POs
-        if not exp_grouped.empty or not pos_grouped.empty:
-             # Outer join to keep all project costs
-             costs_merged = pd.merge(exp_grouped, pos_grouped, on='project_id', how='outer').fillna(0)
-             costs_merged['amount'] = costs_merged['total_exp'] + costs_merged['total_pos']
+        # C. Budget Items (Labor/Internal Costs mapped as Items)
+        # Added to reflect "Mano de Obra" or other allocated costs as "Executed" per user workflow
+        bud_items_df = data.get_all_budget_items()
+        if not bud_items_df.empty:
+            bud_grouped = bud_items_df.groupby('project_id')['estimated_amount'].sum().reset_index()
+            bud_grouped.columns = ['project_id', 'total_items']
         else:
-             costs_merged = pd.DataFrame(columns=['project_id', 'amount'])
+            bud_grouped = pd.DataFrame(columns=['project_id', 'total_items'])
 
-        # D. Final Merge with Projects
+        # D. Combine All Costs
+        # Merge Expenses + POs + BudgetItems
+        from functools import reduce
+        dfs_to_merge = [exp_grouped, pos_grouped, bud_grouped]
+        
+        # Merge all on project_id using outer join
+        costs_merged = reduce(lambda left, right: pd.merge(left, right, on='project_id', how='outer'), dfs_to_merge).fillna(0)
+        
+        # Sum all components
+        costs_merged['amount'] = costs_merged['total_exp'] + costs_merged['total_pos'] + costs_merged['total_items']
+
+        # E. Final Merge with Projects
         budget_analysis = pd.merge(
             projects_df[['id', 'name', 'budget_total', 'status']], 
             costs_merged[['project_id', 'amount']], 
@@ -83,22 +93,34 @@ def render_dashboard():
     active_count = len(projects_df[projects_df['status'] == 'Activo']) if not projects_df.empty else 0
     c1.metric("Proyectos Activos", active_count, delta="En ejecución", delta_color="normal")
     
-    # Budget Health
-    total_budget = kpis['total_budget']
-    total_spent = kpis['total_spent']
-    global_utilization = (total_spent / total_budget * 100) if total_budget > 0 else 0
-    c2.metric("Ejecución Presupuestal", f"{global_utilization:.1f}%", delta=f"${total_spent:,.0f} / ${total_budget:,.0f} Total", delta_color="inverse")
+    # Budget Health (Recalculate Global based on new logic)
+    if not budget_analysis.empty:
+        total_budget_global = budget_analysis['budget_total'].sum()
+        total_spent_global = budget_analysis['amount'].sum()
+    else:
+        total_budget_global = kpis['total_budget']
+        total_spent_global = kpis['total_spent'] # Fallback
+        
+    global_utilization = (total_spent_global / total_budget_global * 100) if total_budget_global > 0 else 0
+    c2.metric("Ejecución Presupuestal", f"{global_utilization:.1f}%", delta=f"${total_spent_global:,.0f} / ${total_budget_global:,.0f} Total", delta_color="inverse")
     
     # Pending POs
     c3.metric("Órdenes Pendientes", f"${kpis.get('pending_po_amount', 0):,.0f}", delta=f"{alerts_data[0]['message'] if alerts_data else 'Sin atrasos'}", delta_color="off")
 
-    # Quality
+    # Quality & Bitácora
     lab_df = data.get_lab_tests(None)
-    pass_rate = 0
+    all_comments = data.get_all_comments()
+    
     if not lab_df.empty:
          pass_count = len(lab_df[lab_df['result'] == 'Aprobado'])
          pass_rate = int((pass_count/len(lab_df))*100)
-    c4.metric("Calidad Global", f"{pass_rate}%", delta="Tasa Aprobación")
+         c4.metric("Calidad Global", f"{pass_rate}%", delta="Tasa Aprobación")
+    elif not all_comments.empty:
+         # Fallback to Bitacora Activity
+         active_logs = len(all_comments)
+         c4.metric("Calidad Global", f"{active_logs}", delta="Entradas Bitácora", help="Sin ensayos registrados, mostrando actividad en libro de obra.")
+    else:
+         c4.metric("Calidad Global", "N/A", delta="Sin Datos")
     
     # Team
     t_stats = data.get_global_team_stats() # Assuming enhanced data function or reusing existing

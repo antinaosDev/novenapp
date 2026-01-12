@@ -336,10 +336,18 @@ def render_project_details(project_id):
                 phases['end'] = pd.to_datetime(phases['end_date'])
                 phases = phases.sort_values('start')
                 
-                # Fix: Reduced height multiplier (0.4) to fit page and prevent massive charts
-                # Fix: Basic height + item height
-                fig_height = max(3.0, len(phases) * 0.4 + 1.5)
+                # Fix: Incremented height multiplier (0.6) for better spacing
+                fig_height = max(4.0, len(phases) * 0.6 + 2.0)
                 fig2, ax2 = plt.subplots(figsize=(10, fig_height))
+                
+                # Colors
+                status_colors = {
+                    'En Progreso': '#3b82f6', # Blue
+                    'Completada': '#10b981',  # Green
+                    'Atrasada': '#ef4444',    # Red
+                    'Pendiente': '#cbd5e1',   # Gray
+                    'Detenida': '#ef4444'     # Red
+                }
                 
                 # Create Bars
                 for i, row in phases.iterrows():
@@ -347,16 +355,8 @@ def render_project_details(project_id):
                     end_num = mdates.date2num(row['end'])
                     duration = end_num - start_num
                     
-                    # Fix: Expanded Color Logic
                     status = row.get('status', 'Pendiente')
-                    if status == 'En Progreso':
-                         color = '#3b82f6' # Blue
-                    elif status == 'Completada':
-                         color = '#10b981' # Green
-                    elif status in ['Atrasada', 'Detenida']:
-                         color = '#ef4444' # Red
-                    else:
-                         color = '#cbd5e1' # Gray (Pendiente/N/A)
+                    color = status_colors.get(status, '#cbd5e1')
                     
                     ax2.barh(row['name'], duration, left=start_num, height=0.6, color=color)
                 
@@ -365,8 +365,18 @@ def render_project_details(project_id):
                 ax2.set_title("Cronograma de Fases", fontweight='bold')
                 ax2.grid(axis='x', linestyle='--', alpha=0.3)
                 
-                # Fix: Tight Layout to prevent label cutting
-                plt.tight_layout()
+                # Add Legend Manually
+                import matplotlib.patches as mpatches
+                legend_patches = [
+                    mpatches.Patch(color='#10b981', label='Completada'),
+                    mpatches.Patch(color='#3b82f6', label='En Progreso'),
+                    mpatches.Patch(color='#ef4444', label='Atrasada'),
+                    mpatches.Patch(color='#cbd5e1', label='Pendiente')
+                ]
+                ax2.legend(handles=legend_patches, loc='upper right', fontsize='small')
+                
+                # Fix: Tight Layout with extra padding
+                plt.tight_layout(pad=3.0)
                 
                 sections.append({"type": "plot", "content": fig2, "title": "Planificación"})
             

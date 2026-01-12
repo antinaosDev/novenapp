@@ -606,6 +606,11 @@ def update_budget_item(item_id, name, category, amount):
 def delete_budget_item(item_id):
     supabase.table("budget_items").delete().eq("id", item_id).execute()
 
+def get_all_budget_items():
+    """Fetches all budget items for all projects."""
+    response = supabase.table("budget_items").select("*").execute()
+    return pd.DataFrame(response.data)
+
 # --- Finance Support ---
 def create_purchase_order(project_id, provider_name, date, total_amount, order_number, description=""):
     data = {
@@ -935,6 +940,11 @@ def update_comment(comment_id, content):
 
 def delete_comment(comment_id):
     supabase.table("comments").delete().eq("id", comment_id).execute()
+
+def get_all_comments():
+    """Fetches all comments (Bitacora) for global quality metrics."""
+    res = supabase.table("comments").select("id, project_id").execute()
+    return pd.DataFrame(res.data)
 
 def update_project_config(project_id, status, lat, lon):
      supabase.table("projects").update({

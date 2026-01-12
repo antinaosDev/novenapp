@@ -162,7 +162,10 @@ def render_quality():
         logs_df = quality.get_logs(project_id)
         
         if logs_df.empty:
-            st.info("No hay registros en bitácora para este proyecto.")
+            if not comments.empty:
+                 st.caption("No hay registros formales, pero existen notas informales visualizadas arriba.")
+            else:
+                 st.info("No hay registros en bitácora para este proyecto.")
         else:
             for idx, row in logs_df.iterrows():
                 is_ito = "ITO" in row['inspector_name']

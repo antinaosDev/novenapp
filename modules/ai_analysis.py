@@ -16,6 +16,11 @@ def gather_global_stats():
     stats['active_projects'] = len(projects[projects['status'].isin(['En Ejecución', 'Activo'])]) if not projects.empty else 0
     stats['total_budget'] = projects['budget_total'].sum() if not projects.empty else 0
     
+    # 1.5 Internal/Allocated Budget (Mano de Obra)
+    # New logic to see Labor Costs
+    budget_items = data.get_all_budget_items()
+    stats['allocated_budget_items'] = budget_items['estimated_amount'].sum() if not budget_items.empty else 0
+    
     # 2. Finance
     fin_stats = finance.get_financial_summary()
     stats['finance_pending'] = fin_stats['pending']
@@ -36,11 +41,18 @@ def gather_global_stats():
     
     # 5. Quality
     lab_tests = quality.get_lab_tests(None)
+    all_comments = data.get_all_comments()
+    
     if not lab_tests.empty:
         passed = len(lab_tests[lab_tests['result'] == 'Aprobado'])
-        stats['quality_pass_rate'] = int((passed / len(lab_tests)) * 100)
+        stats['quality_pass_rate'] = f"{int((passed / len(lab_tests)) * 100)}% (Ensayos Lab)"
+    elif not all_comments.empty:
+        # Fallback to activity level
+        stats['quality_pass_rate'] = "N/A (Solo Bitácora Activa)"
     else:
         stats['quality_pass_rate'] = "N/A"
+        
+    stats['bitacora_entries'] = len(all_comments)
         
     # 6. Lean
     # We'll take a generic PPC average if possible, or just task volume
@@ -92,6 +104,7 @@ def generate_executive_report(api_key, stats):
     - Proyectos Totales: {stats.get('total_projects')}
     - Proyectos Activos (En Ejecución): {stats.get('active_projects')}
     - Presupuesto Total Cartera: ${stats.get('total_budget'):,.0f}
+    - Presupuesto Asignado Interno (Mano de Obra/Ítems): ${stats.get('allocated_budget_items'):,.0f} (Adicional a contratos)
 
     [FINANZAS]
     - Órdenes de Compra Pendientes: {stats.get('finance_pending')}
@@ -107,7 +120,8 @@ def generate_executive_report(api_key, stats):
     - Adjudicadas Recientes: {stats.get('tenders_awarded')}
 
     [CALIDAD & OPERACIONES]
-    - Tasa Aprobación Ensayos (Laboratorio): {stats.get('quality_pass_rate')}%
+    - Tasa Aprobación Ensayos (Laboratorio): {stats.get('quality_pass_rate')}
+    - Actividad en Bitácora (Notas/Libro de Obra): {stats.get('bitacora_entries')} entradas
     - Personal en Terreno (Dotación): {stats.get('total_personnel')}
     - Recursos Totales: {stats.get('resources_total')} (Maquinaria: {stats.get('resources_machinery')})
     - PPC Promedio (Lean Construction): {stats.get('avg_ppc')}%
@@ -117,27 +131,18 @@ def generate_executive_report(api_key, stats):
 
     Estructura el reporte en 3 secciones claras:
 
-    1. **Resumen Ejecutivo**: Presenta el estado general de salud de la empresa, destacando la eficiencia en la ejecución de proyectos y la situación financiera. Menciona si la empresa está cumpliendo con sus expectativas operativas y financieras. Haz un análisis sobre la relación entre los proyectos activos, el presupuesto total y las ordenes de compra pendientes, y cómo estos indicadores impactan la rentabilidad.
+    1. **Resumen Ejecutivo**: Presenta el estado general de salud de la empresa. Integra el análisis del presupuesto oficial vs el asignado internamente (Mano de Obra). Menciona la actividad en Bitácora como señal de fiscalización en terreno, incluso si no hay ensayos de laboratorio recientes.
 
-    2. **Alertas y Riesgos**: Resalta las áreas críticas que requieren atención urgente. Ejemplos incluyen:
-       - Si hay subcontratistas bloqueados debido a riesgos contractuales o problemas de cumplimiento.
-       - Si el PPC (Planificación por Compleción) es bajo (<70%), lo cual podría indicar problemas de eficiencia operativa o retrasos en el cronograma.
-       - Si la deuda flotante es alta o si existen pagos pendientes que podrían afectar la liquidez de la empresa.
-       - La cantidad de órdenes de compra pendientes podría reflejar posibles demoras o deficiencias en la gestión de compras y suministros.
+    2. **Alertas y Riesgos**: Resalta las áreas críticas que requieren atención urgente. Ejemplos:
+       - Subcontratistas bloqueados.
+       - PPC bajo (<70%).
+       - Deuda flotante alta.
+       - Baja actividad en bitácora si hay proyectos activos.
 
-    3. **Recomendaciones**: Proporciona 3 acciones estratégicas para el Gerente General:
-       - Implementar un plan de revisión financiera semanal para reducir la deuda flotante y asegurar que las órdenes de compra sean procesadas a tiempo.
-       - Establecer medidas para mejorar la tasa de aprobación de ensayos en el laboratorio y asegurar que todos los proyectos cumplan con los estándares de calidad desde el inicio.
-       - Iniciar un programa de optimización en el manejo de subcontratistas, con especial énfasis en los subcontratistas bloqueados, para mitigar los riesgos contractuales y garantizar la continuidad de las operaciones.
+    3. **Recomendaciones**: Proporciona 3 acciones estratégicas para el Gerente General.
 
     Utiliza formato Markdown con negritas y listas para destacar información importante.
-    El tono debe ser formal, técnico pero accesible, con enfoque en claridad, efectividad y acción inmediata.
-    El reporte debe ser redactado en español, de forma que sea fácilmente comprensible para los altos directivos de la empresa.
-
-    **Análisis Adicional para guiar tu respuesta:**
-    - **Presupuesto vs. Proyectos Activos**: Analiza la relación entre el presupuesto total y el número de proyectos activos. Si el presupuesto es elevado pero hay pocos proyectos activos, podría indicar una falta de ejecución eficiente. Si, por el contrario, hay una gran cantidad de proyectos en ejecución con un presupuesto ajustado, se debe evaluar si la empresa está operando dentro de sus márgenes de rentabilidad.
-    - **PPC Promedio**: Si el PPC promedio es bajo, esto sugiere que los proyectos no están cumpliendo con las metas de productividad establecidas. Un PPC inferior al 70% indica una desviación importante en la ejecución de los proyectos, lo que podría derivar en sobrecostos o retrasos. Debería sugerirse una revisión de los procesos operativos y una mejora en la planificación y control de los proyectos.
-    - **Riesgo Financiero y Subcontratistas**: La deuda flotante y las órdenes de compra pendientes pueden tener un impacto directo en la operatividad de la empresa. Si estas cifras son altas, podría haber problemas de liquidez que podrían afectar la capacidad de la empresa para cumplir con sus compromisos financieros. A su vez, los subcontratistas bloqueados por riesgo pueden ser una señal de que la empresa está enfrentando dificultades contractuales o de cumplimiento, lo cual debe resolverse con urgencia.
+    El tono debe ser formal, técnico pero accesible.
     """
     
     try:
