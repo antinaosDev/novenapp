@@ -329,7 +329,9 @@ def get_kpis():
     if not po_df.empty:
         # Filter out Rejected
         total_spent = po_df[po_df['status'] != 'Rechazada']['total_amount'].sum()
-        pending_po_amount = po_df[po_df['status'] == 'Pendiente']['total_amount'].sum()
+        # User Feedback: "Pending Orders" shows $0 but they expect value.
+        # Interpreting "Pending" as "Pending Payment/Finalization" (Pendiente + Aprobada).
+        pending_po_amount = po_df[po_df['status'].isin(['Pendiente', 'Aprobada'])]['total_amount'].sum()
     else:
         total_spent = 0
         pending_po_amount = 0

@@ -23,9 +23,15 @@ def gather_global_stats():
     
     # 2. Finance
     fin_stats = finance.get_financial_summary()
-    stats['finance_pending'] = fin_stats['pending']
+    # Aligning with Dashboard: Pending includes "Approved but not paid" (Floating Debt) if needed, 
+    # but finance.get_financial_summary returns raw counts.
+    # Let's check logic:
+    # fin_stats['pending'] is strictly 'Pendiente'. 
+    # To match dashboard we might want to show 'Pendiente + Aprobada' count?
+    # User asked to update ALL functions.
+    stats['finance_pending'] = fin_stats['pending'] + fin_stats['approved'] # Total active/unpaid
     stats['finance_paid'] = fin_stats['paid']
-    stats['finance_debt'] = fin_stats['total_pending_amount']
+    stats['finance_debt'] = fin_stats['total_pending_amount'] # This is currently ONLY 'Pendiente' sum in finance.py. We need to fix finance.py too.
     
     # 3. Compliance
     # Aggregated compliance is tricky without project context, we'll confirm general status

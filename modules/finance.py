@@ -45,5 +45,6 @@ def get_financial_summary():
         "pending": len(pending),
         "approved": len(approved),
         "paid": len(paid),
-        "total_pending_amount": pending['total_amount'].sum() if 'total_amount' in pending.columns else 0
+        "total_pending_amount": (pending['total_amount'].sum() if 'total_amount' in pending.columns else 0) + 
+                                (approved['total_amount'].sum() if 'total_amount' in approved.columns else 0)
     }
