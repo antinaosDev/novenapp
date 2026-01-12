@@ -49,7 +49,10 @@ def render_dashboard():
         if not exp_grouped.empty or not pos_grouped.empty:
              # Outer join to keep all project costs
              costs_merged = pd.merge(exp_grouped, pos_grouped, on='project_id', how='outer').fillna(0)
-             costs_merged['amount'] = costs_merged['total_exp'] + costs_merged['total_pos']
+             # User requested ONLY Purchase Orders (OC) to be counted as execution.
+             # 'total_exp' (Petty Cash/Expenses table) seems to contain Allocated Items values ($3.4M) that user wants excluded.
+             costs_merged['amount'] = costs_merged['total_pos'] 
+             # costs_merged['total_exp'] + costs_merged['total_pos']
         else:
              costs_merged = pd.DataFrame(columns=['project_id', 'amount'])
 
@@ -94,8 +97,12 @@ def render_dashboard():
     global_utilization = (total_spent_global / total_budget_global * 100) if total_budget_global > 0 else 0
     c2.metric("Ejecución Presupuestal", f"{global_utilization:.1f}%", delta=f"${total_spent_global:,.0f} / ${total_budget_global:,.0f} Total", delta_color="inverse")
     
+    
+    
     # Pending POs
     c3.metric("Órdenes Pendientes", f"${kpis.get('pending_po_amount', 0):,.0f}", delta=f"{alerts_data[0]['message'] if alerts_data else 'Sin atrasos'}", delta_color="off")
+
+
 
     # Quality & Bitácora
     lab_df = data.get_lab_tests(None)
