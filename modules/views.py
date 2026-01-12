@@ -95,7 +95,7 @@ def render_dashboard():
         total_spent_global = kpis['total_spent'] # Fallback
         
     global_utilization = (total_spent_global / total_budget_global * 100) if total_budget_global > 0 else 0
-    c2.metric("Ejecución Presupuestal", f"{global_utilization:.1f}%", delta=f"${total_spent_global:,.0f} / ${total_budget_global:,.0f} Total", delta_color="inverse")
+    c2.metric("Ejecución (OC Aprob/Pend)", f"{global_utilization:.1f}%", delta=f"${total_spent_global:,.0f} / ${total_budget_global:,.0f} Total", delta_color="inverse", help="Considera Órdenes de Compra Aprobadas y Pendientes.")
     
     
     
