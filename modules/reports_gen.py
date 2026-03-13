@@ -121,7 +121,7 @@ class NovAPP_PDF(FPDF):
     def get_nb_lines(self, w, txt):
         """Calcula el número de líneas que ocupará un texto para un ancho dado."""
         if not txt: return 1
-        cw = self.current_font['cw']
+        cw = self.current_font.cw
         if w == 0:
             w = self.w - self.r_margin - self.x
         w_max = (w - 2 * self.c_margin) * 1000 / self.font_size

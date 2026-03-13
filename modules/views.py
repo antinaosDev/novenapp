@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+pd.set_option('future.no_silent_downcasting', True)
 from modules import data, ui
 from datetime import datetime, timedelta
 import plotly.graph_objects as go

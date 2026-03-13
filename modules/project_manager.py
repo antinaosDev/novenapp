@@ -1009,7 +1009,7 @@ def render_project_details(project_id):
                 },
                 hide_index=True,
                 num_rows="dynamic",
-                use_container_width=True,
+                width='stretch',
                 key=f"editor_bodega_{project_id}"
             )
             
@@ -1097,7 +1097,7 @@ def render_project_details(project_id):
             if warehouse_df.empty:
                 st.info("La bodega virtual está vacía. Sube una guía de despacho o factura para comenzar.")
             else:
-                st.dataframe(view_df, hide_index=True, use_container_width=True)
+                st.dataframe(view_df, hide_index=True, width='stretch')
             
         # 3. Resumen de Material Usado (Agrupación solicitada)
         if not warehouse_df.empty:
@@ -1135,7 +1135,7 @@ def render_project_details(project_id):
                         "Costo Acumulado": st.column_config.NumberColumn(format="$%.2f")
                     },
                     hide_index=True,
-                    use_container_width=True
+                    width='stretch'
                 )
             else:
                 st.write("---")
