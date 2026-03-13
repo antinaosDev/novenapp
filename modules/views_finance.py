@@ -159,8 +159,24 @@ def render_finance():
     with st.container(border=True):
         st.subheader(f"Registro de Ordenes de Compra ({len(orders_df)})")
         
+        # --- FILTRO POR PROYECTO ---
+        projects_df = data.get_projects()
+        if not projects_df.empty:
+            proj_options = ["Todos"] + projects_df['id'].tolist()
+            def format_proj(x):
+                if x == "Todos": return "Todos los Proyectos"
+                match = projects_df[projects_df['id'] == x]
+                return match['name'].values[0] if not match.empty else f"Proyecto {x}"
+            
+            selected_proj_filter = st.selectbox("Filtrar por Proyecto:", proj_options, format_func=format_proj)
+            
+            # Aplicar filtro
+            if selected_proj_filter != "Todos":
+                orders_df = orders_df[orders_df['project_id'] == selected_proj_filter]
+        # ---------------------------
+
         if orders_df.empty:
-            st.info("No hay ordenes de compra registradas.")
+            st.info("No hay ordenes de compra registradas para esta selección.")
         else:
             st.dataframe(
                 orders_df,
@@ -187,7 +203,13 @@ def render_finance():
             # Selection
             col_sel, col_sp = st.columns([3, 1])
             with col_sel:
-                 po_id = st.selectbox("Seleccionar OC para gestionar:", orders_df['id'].tolist(), format_func=lambda x: f"OC-{x:04d} | {orders_df[orders_df['id']==x]['order_number'].values[0]} - {orders_df[orders_df['id']==x]['provider_name'].values[0]}")
+                 def format_po_sel(x):
+                     po_row = orders_df[orders_df['id'] == x]
+                     if not po_row.empty:
+                         return f"OC-{x:04d} | {po_row['order_number'].values[0]} - {po_row['provider_name'].values[0]}"
+                     return f"OC-{x:04d}"
+                 
+                 po_id = st.selectbox("Seleccionar OC para gestionar:", orders_df['id'].tolist(), format_func=format_po_sel)
         else:
             po_id = None
              

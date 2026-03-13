@@ -6,11 +6,13 @@ from datetime import datetime
 import textwrap
 from geopy.geocoders import Nominatim
 import re
+import fitz  # PyMuPDF - para contar paginas del PDF
 
 # Helper for Geocoding with Fallback
 import random
 import time
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
+from modules import ocr_service  # OCR con IA para Bodega Virtual
 
 # Static fallback for common problematic locations or when API fails
 KNOWN_LOCATIONS = {
@@ -337,7 +339,8 @@ def render_project_details(project_id):
                 phases = phases.sort_values('start')
                 
                 # Fix: Incremented height multiplier (0.6) for better spacing
-                fig_height = max(4.0, len(phases) * 0.6 + 2.0)
+                # Limiting max height so it doesn't overflow a PDF page
+                fig_height = min(8.5, max(4.0, len(phases) * 0.4 + 2.0))
                 fig2, ax2 = plt.subplots(figsize=(10, fig_height))
                 
                 # Colors
@@ -378,14 +381,22 @@ def render_project_details(project_id):
                 # Fix: Tight Layout with extra padding
                 plt.tight_layout(pad=3.0)
                 
+                sections.append({"type": "new_page"})
                 sections.append({"type": "plot", "content": fig2, "title": "Planificación"})
+
+                # New Section: Phases Table
+                phases_tbl = phases[['name', 'start_date', 'end_date', 'status']].copy()
+                phases_tbl['start_date'] = pd.to_datetime(phases_tbl['start_date']).dt.strftime('%d/%m/%Y')
+                phases_tbl['end_date'] = pd.to_datetime(phases_tbl['end_date']).dt.strftime('%d/%m/%Y')
+                phases_tbl.columns = ['Fase', 'Inicio', 'Fin', 'Estado']
+                sections.append({"type": "table", "content": phases_tbl, "title": "Gestión de Fases"})
             
             # 4. Recent Expenses (Table)
             if not valid_orders.empty:
-                 last_orders = valid_orders.sort_values('date', ascending=False).head(10)[['date', 'provider_name', 'description', 'total_amount']]
+                 last_orders = valid_orders.sort_values('date', ascending=False)[['date', 'provider_name', 'description', 'total_amount']]
                  last_orders['date'] = pd.to_datetime(last_orders['date']).dt.strftime('%d/%m/%Y')
                  last_orders.columns = ['Fecha', 'Proveedor', 'Detalle', 'Monto']
-                 sections.append({"type": "table", "content": last_orders, "title": "Últimos Gastos Registrados"})
+                 sections.append({"type": "table", "content": last_orders, "title": "Gastos Registrados"})
 
             # 5. Faenas
             faenas_pdf = data.get_faenas(project_id)
@@ -395,6 +406,49 @@ def render_project_details(project_id):
                     "content": faenas_pdf[['name', 'supervisor']],
                     "title": "Faenas y Frentes de Trabajo"
                 })
+
+            # 6. Virtual Warehouse
+            warehouse_df = data.get_warehouse_items(project_id)
+            if not warehouse_df.empty:
+                sections.append({"type": "new_page"})
+                sections.append({"type": "text", "title": "Bodega Virtual", "content": "Detalle de los insumos y materiales registrados en bodega para este proyecto."})
+                
+                # Table 1: Stock Actual
+                stock_df = warehouse_df[['nombre_documento', 'hoja', 'codigo', 'descripcion', 'cantidad', 'p_unitario', 'total', 'status']].copy()
+                stock_df.columns = ['Documento', 'Pág', 'SKU', 'Descripción', 'Cant.', 'P.Unit', 'Total', 'Estado']
+                sections.append({
+                    "type": "table",
+                    "content": stock_df,
+                    "title": "Inventario de Insumos",
+                    "col_widths": [25, 8, 12, 60, 10, 20, 20, 15] # Total 170 + padding
+                })
+
+                # Table 2: Summary of Used Materials
+                used_df = warehouse_df[warehouse_df['status'] == 'Usado'].copy()
+                if not used_df.empty:
+                    if 'cantidad_usada' in used_df.columns:
+                        summary_used = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
+                            'cantidad': 'sum',
+                            'cantidad_usada': 'sum',
+                            'total': 'sum'
+                        }).reset_index()
+                        summary_used['balance'] = summary_used['cantidad'] - summary_used['cantidad_usada']
+                        summary_used.columns = ['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Total', 'Usado', 'Costo', 'Disp.']
+                        # Reorder
+                        summary_used = summary_used[['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Total', 'Usado', 'Disp.', 'Costo']]
+                    else:
+                        summary_used = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
+                            'cantidad': 'sum',
+                            'total': 'sum'
+                        }).reset_index()
+                        summary_used.columns = ['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Cant.', 'Costo']
+                        
+                    sections.append({
+                        "type": "table",
+                        "content": summary_used,
+                        "title": "Resumen de Consumos (Material Usado)",
+                        "col_widths": [25, 8, 55, 12, 12, 12, 12, 22] # Total ~160-170
+                    })
 
             # Generate
             pdf_bytes = reports_gen.generate_pdf_report(f"Ficha: {project['name']}", sections)
@@ -408,7 +462,7 @@ def render_project_details(project_id):
             )
 
     # --- Tabs Content ---
-    tabs = st.tabs(["📊 Cronograma", "💰 Gastos", "💬 Bitácora", "🏗️ Faenas", "⚙️ Configuración"])
+    tabs = st.tabs(["📊 Cronograma", "💰 Gastos", "💬 Bitácora", "🏗️ Faenas", "⚙️ Configuración", "📦 Bodega Virtual"])
     
     with tabs[0]:
         st.subheader("Línea de Tiempo")
@@ -552,7 +606,6 @@ def render_project_details(project_id):
                 
                 if st.form_submit_button("Enviar Solicitud", type="primary"):
                      if item_desc:
-                         import time
                          temp_order_num = f"REQ-{int(time.time())}"
                          # Fix: Cast types
                          data.create_purchase_order(int(project_id), provider if provider else "Por definir", datetime.now(), float(est_amount), temp_order_num, description=item_desc)
@@ -843,3 +896,338 @@ def render_project_details(project_id):
                                  data.create_budget_item(project_id, b_name, b_cat, b_amt)
                                  st.success("Agregado")
                                  st.rerun()
+
+    with tabs[5]:
+        st.subheader("📦 Bodega Virtual y Recepción de Materiales")
+        st.caption("Administra los insumos de la obra mediante extracción de datos con IA.")
+        
+        has_edit_access = st.session_state.get('user_role') in ["Programador", "Administrador", "Residente de Obra"]
+        
+        # 1. OCR Upload Area
+        if has_edit_access:
+            with st.expander("📥 Cargar Nueva Guía o Factura (PDF)", expanded=False):
+                # Show quota info only for Programador
+                ocr_used = data.get_monthly_ocr_page_count()
+                ocr_limit = data.get_ocr_monthly_limit()
+                
+                if st.session_state.get('user_role') == "Programador":
+                    ocr_pct = min(ocr_used / max(ocr_limit, 1), 1.0)
+                    st.progress(ocr_pct, text=f"Cuota OCR mensual: {ocr_used} / {ocr_limit} hojas")
+                
+                if ocr_used >= ocr_limit:
+                    st.error(f"⛔ Límite mensual de {ocr_limit} hojas OCR alcanzado. Contacta al Administrador para reiniciar la cuota.")
+                else:
+                    if st.session_state.get('user_role') == "Programador":
+                        st.caption(f"Hojas restantes este mes: {ocr_limit - ocr_used}")
+                    
+                    uploaded_pdf = st.file_uploader("Sube el documento PDF para extraer los insumos", type=['pdf'], key=f"pdf_up_{project_id}")
+                    if uploaded_pdf and st.button("Procesar PDF con IA"):
+                        with st.spinner("Analizando documento con OCR (Groq Llama-3)... Esto puede tomar unos segundos."):
+                            try:
+                                _pdf_preview = uploaded_pdf.read()
+                                _doc = fitz.open(stream=_pdf_preview, filetype="pdf")
+                                _num_pages = len(_doc)
+                                _doc.close()
+                                
+                                if (ocr_used + _num_pages) > ocr_limit:
+                                    st.error(f"⛔ Este documento tiene {_num_pages} hojas y supera la cuota restante ({ocr_limit - ocr_used} hojas). Procesa un documento más pequeño o contacta al Administrador.")
+                                else:
+                                    extracted_items = ocr_service.process_pdf_bytes(_pdf_preview, doc_name=uploaded_pdf.name)
+                                    
+                                    if extracted_items:
+                                        data.add_warehouse_items(project_id, extracted_items)
+                                        data.increment_monthly_ocr_pages(_num_pages)
+                                        st.success(f"¡Se han extraído y guardado {len(extracted_items)} insumos exitosamente! ({_num_pages} páginas procesadas)")
+                                        time.sleep(2)
+                                        st.rerun()
+                                    else:
+                                        st.error("No se pudo extraer información estructurada del PDF. Verifica que sea un documento válido.")
+                            except Exception as e:
+                                st.error(f"Ocurrió un error al procesar el PDF: {e}")
+
+
+        st.divider()
+        
+        # 2. Inventory Management (CRUD)
+        warehouse_df = data.get_warehouse_items(project_id)
+        
+        # Calculate KPIs even if empty
+        if not warehouse_df.empty:
+            total_items = warehouse_df['cantidad'].sum()
+            total_value = warehouse_df['total'].sum()
+            if 'cantidad_usada' in warehouse_df.columns:
+                used_items = warehouse_df['cantidad_usada'].sum()
+                warehouse_df['balance'] = warehouse_df['cantidad'] - warehouse_df['cantidad_usada']
+            else:
+                used_items = warehouse_df[warehouse_df['status'] == 'Usado']['cantidad'].sum()
+                warehouse_df['balance'] = warehouse_df['cantidad'] # Fallback
+        else:
+            total_items = 0
+            total_value = 0
+            used_items = 0
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Líneas de Insumos", len(warehouse_df))
+        c2.metric("Volumen Total", f"{total_items:,.1f}")
+        c3.metric("Valor Bodega", f"${total_value:,.0f}")
+        c4.metric("Volumen Usado", f"{used_items:,.1f}")
+        
+        st.write("### Inventario Actual")
+        
+        # Formatear columnas para el editor
+        cols_to_show = ['id', 'nombre_documento', 'hoja', 'codigo', 'descripcion', 'cantidad']
+        if 'cantidad_usada' in warehouse_df.columns:
+             cols_to_show.append('cantidad_usada')
+             cols_to_show.append('balance')
+        
+        cols_to_show.extend(['um', 'p_unitario', 'total', 'status'])
+        
+        view_df = warehouse_df[[c for c in cols_to_show if c in warehouse_df.columns]].copy()
+        
+        if has_edit_access:
+            # Editor Interactivo
+            edited_df = st.data_editor(
+                view_df,
+                column_config={
+                    "id": None, # Ocultar ID iterativo
+                    "nombre_documento": "Documento",
+                    "hoja": st.column_config.NumberColumn("Hoja", default=1),
+                    "codigo": "Código",
+                    "descripcion": "Descripción del Material",
+                    "cantidad": st.column_config.NumberColumn("Cant. Total", format="%.2f"),
+                    "cantidad_usada": st.column_config.NumberColumn("Cant. Usada", format="%.2f"),
+                    "balance": st.column_config.NumberColumn("Balance", format="%.2f", disabled=True),
+                    "um": "UM",
+                    "p_unitario": st.column_config.NumberColumn("Precio U.", format="$%.2f"),
+                    "total": st.column_config.NumberColumn("Total", format="$%.2f"),
+                    "status": st.column_config.SelectboxColumn(
+                        "Estado", 
+                        options=["En Bodega", "Usado", "Mermado", "Devuelto"],
+                        required=True,
+                        default="En Bodega"
+                    )
+                },
+                hide_index=True,
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"editor_bodega_{project_id}"
+            )
+            
+            # Check for changes and update/delete
+            if st.button("💾 Guardar Cambios en Bodega", type="primary"):
+                try: # simple diff loop
+                    changes_made = False
+                    
+                    # Handle Deletes: IDs missing from edited_df
+                    if not warehouse_df.empty:
+                        original_ids = set(warehouse_df['id'])
+                        current_ids = set(edited_df['id'].dropna())
+                        deleted_ids = original_ids - current_ids
+                        for d_id in deleted_ids:
+                            data.delete_warehouse_item(d_id)
+                            changes_made = True
+                        
+                    # Handle Updates & Inserts
+                    for _, row in edited_df.iterrows():
+                        # Extract single row dictionary
+                        row_dict = row.to_dict()
+                        
+                        if pd.isna(row_dict.get('id')): 
+                            # It's a newly added row manually by user
+                            dummy_item = [{
+                                "nombre_documento": row_dict.get('nombre_documento', ''),
+                                "hoja": row_dict.get('hoja', 1),
+                                "codigo": row_dict.get('codigo', ''), 
+                                "descripcion": row_dict.get('descripcion', ''),
+                                "cantidad": row_dict.get('cantidad', 0), 
+                                "um": row_dict.get('um', ''),
+                                "p_unitario": row_dict.get('p_unitario', 0), 
+                                "total": row_dict.get('total', 0),
+                                "status": row_dict.get('status') or "En Bodega"
+                            }]
+                            data.add_warehouse_items(project_id, dummy_item)
+                            changes_made = True
+                        else:
+                            # Validate Update (detect changes in ANY column)
+                            orig_row = warehouse_df[warehouse_df['id'] == row_dict['id']].iloc[0]
+                            is_different = False
+                            for col in ['status', 'cantidad', 'cantidad_usada', 'descripcion', 'codigo', 'um', 'p_unitario', 'total', 'hoja', 'nombre_documento']:
+                                # Robust comparison
+                                val_edit = str(row_dict.get(col, '')).strip()
+                                val_orig = str(orig_row.get(col, '')).strip()
+                                if val_edit != val_orig and val_edit != 'nan':
+                                    # Ignore 'nan' from blank numeric cells versus '0.0'
+                                    if val_orig in ['0.0', '0'] and val_edit in ['nan', 'None']:
+                                        continue
+                                    # Ignore 0.0 vs 0 comparison issue
+                                    try: 
+                                        if float(val_edit) == float(val_orig):
+                                            continue
+                                    except: 
+                                        pass
+                                    is_different = True
+                                    break
+                                
+                            if is_different:
+                                calculated_total = round(float(row_dict.get('cantidad', 0)) * float(row_dict.get('p_unitario', 0)), 2)
+                                data.update_warehouse_item(row_dict['id'], {
+                                    "status": row_dict.get('status', 'En Bodega'),
+                                    "nombre_documento": row_dict.get('nombre_documento', ''),
+                                    "hoja": row_dict.get('hoja', 1),
+                                    "cantidad": row_dict.get('cantidad', 0),
+                                    "cantidad_usada": row_dict.get('cantidad_usada', 0),
+                                    "descripcion": row_dict.get('descripcion', ''),
+                                    "codigo": row_dict.get('codigo', ''),
+                                    "um": row_dict.get('um', ''),
+                                    "p_unitario": row_dict.get('p_unitario', 0),
+                                    "total": calculated_total
+                                })
+                                changes_made = True
+                                
+                    if changes_made:
+                        st.success("Cambios guardados exitosamente.")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.info("No se detectaron cambios para guardar.")
+                except Exception as e:
+                    st.error(f"Error al procesar cambios: {e}")
+        else:
+            # Sólo visualización
+            if warehouse_df.empty:
+                st.info("La bodega virtual está vacía. Sube una guía de despacho o factura para comenzar.")
+            else:
+                st.dataframe(view_df, hide_index=True, use_container_width=True)
+            
+        # 3. Resumen de Material Usado (Agrupación solicitada)
+        if not warehouse_df.empty:
+            used_df = warehouse_df[warehouse_df['status'] == 'Usado'].copy()
+            if not used_df.empty:
+                st.write("---")
+                st.write("### 📉 Resumen de Materiales Usados")
+                st.caption("Consolidado de materiales que han sido marcados como 'Usado' en el inventario.")
+                
+                # Agrupación por Documento, Hoja, Descripción y UM (Traceability)
+                if 'cantidad_usada' in used_df.columns:
+                    summary_used = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
+                        'cantidad': 'sum',
+                        'cantidad_usada': 'sum',
+                        'total': 'sum'
+                    }).reset_index()
+                    summary_used['balance'] = summary_used['cantidad'] - summary_used['cantidad_usada']
+                    summary_used.columns = ['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Cant. Total', 'Cant. Usada', 'Costo Acumulado', 'Disponible']
+                    # Reorder columns
+                    summary_used = summary_used[['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Cant. Total', 'Cant. Usada', 'Disponible', 'Costo Acumulado']]
+                else:
+                    summary_used = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
+                        'cantidad': 'sum',
+                        'total': 'sum'
+                    }).reset_index()
+                    summary_used.columns = ['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Cant. Total', 'Costo Acumulado']
+                
+                st.dataframe(
+                    summary_used,
+                    column_config={
+                        "Pág.": st.column_config.NumberColumn(format="%d"),
+                        "Cant. Total": st.column_config.NumberColumn(format="%.2f"),
+                        "Cant. Usada": st.column_config.NumberColumn(format="%.2f"),
+                        "Disponible": st.column_config.NumberColumn(format="%.2f"),
+                        "Costo Acumulado": st.column_config.NumberColumn(format="$%.2f")
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+            else:
+                st.write("---")
+                st.info("💡 No hay materiales marcados como 'Usado' todavía para mostrar en el resumen agrupado.")
+            
+        # Report Button
+        st.write("---")
+        if not warehouse_df.empty and st.button("📄 Generar Reporte de Bodega"):
+            with st.spinner("Creando archivo PDF de la Bodega..."):
+                from modules import reports_gen
+                sections = []
+                sections.append({
+                    "type": "kpi_row",
+                    "content": [
+                        {"label": "Ítems Registrados", "value": f"{len(warehouse_df)}", "sub": "Total General"},
+                        {"label": "Valorización (Total)", "value": f"${total_value:,.0f}", "sub": "Bodega + Usos"},
+                        {"label": "Volumen Total (Cant)", "value": f"{total_items:,.1f}", "sub": "Asociados a la obra"}
+                    ]
+                })
+                sections.append({"type": "text", "title": "Inventario de Insumos", "content": "A continuación se listan todos los materiales y herramientas extraídos en este proyecto, junto a su estado de uso actual."})
+                
+                if 'nombre_documento' in warehouse_df.columns:
+                    cols_rep = ['nombre_documento', 'hoja', 'fecha', 'factura', 'codigo', 'descripcion', 'cantidad']
+                    names_rep = ['Documento', 'Hoja', 'Fecha', 'Doc.', 'SKU', 'Descripción', 'Cant.']
+                    _widths = [25, 7, 15, 15, 12, 55, 10, 15, 15, 18, 18, 15]
+
+                    if 'cantidad_usada' in warehouse_df.columns:
+                        cols_rep.extend(['cantidad_usada', 'balance'])
+                        names_rep.extend(['C.Usada', 'Bal.'])
+                    
+                    cols_rep.extend(['p_unitario', 'total', 'status'])
+                    names_rep.extend(['P.Unit', 'Total', 'Estado'])
+                    
+                    rep_df = warehouse_df[cols_rep].copy()
+                    rep_df.columns = names_rep
+                else:
+                    cols_rep = ['hoja', 'fecha', 'factura', 'codigo', 'descripcion', 'cantidad']
+                    names_rep = ['Hoja', 'Fecha', 'Doc.', 'SKU', 'Descripción', 'Cant.']
+                    _widths = [8, 18, 18, 15, 62, 12, 15, 15, 18, 22, 17]
+
+                    if 'cantidad_usada' in warehouse_df.columns:
+                        cols_rep.extend(['cantidad_usada', 'balance'])
+                        names_rep.extend(['C.Usada', 'Bal.'])
+                    
+                    cols_rep.extend(['p_unitario', 'total', 'status'])
+                    names_rep.extend(['P.Unit', 'Total', 'Estado'])
+
+                    rep_df = warehouse_df[cols_rep].copy()
+                    rep_df.columns = names_rep
+
+                sections.append({
+                    "type": "table", 
+                    "content": rep_df, 
+                    "title": "Listado de Bodega"
+                })
+
+                # Adición de Resumen Agrupado al PDF
+                used_df = warehouse_df[warehouse_df['status'] == 'Usado'].copy()
+                if not used_df.empty:
+                    if 'cantidad_usada' in used_df.columns:
+                        summary_used_pdf = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
+                            'cantidad': 'sum',
+                            'cantidad_usada': 'sum',
+                            'total': 'sum'
+                        }).reset_index()
+                        summary_used_pdf['balance'] = summary_used_pdf['cantidad'] - summary_used_pdf['cantidad_usada']
+                        summary_used_pdf.columns = ['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Total', 'Usado', 'Costo', 'Disp.']
+                        # Reorder
+                        summary_used_pdf = summary_used_pdf[['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Total', 'Usado', 'Disp.', 'Costo']]
+                    else:
+                        summary_used_pdf = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
+                            'cantidad': 'sum',
+                            'p_unitario': 'mean',
+                            'total': 'sum'
+                        }).reset_index()
+                        summary_used_pdf.columns = ['Documento', 'Pag.', 'Material / Descripción', 'UM', 'Cant.', 'P.Unit', 'Costo']
+                    
+                    sections.append({"type": "text", "title": "Resumen de Consumos (Material Usado)", "content": "Este cuadro resume el total acumulado de materiales que han salido de bodega y han sido marcados como 'Usado'."})
+                    sections.append({
+                        "type": "table",
+                        "content": summary_used_pdf,
+                        "title": "Consolidado de Usos",
+                        "col_widths": [30, 8, 55, 12, 15, 15, 15, 25] # Total 175
+                    })
+                
+                pdf_bytes = reports_gen.generate_pdf_report(f"Bodega: {project['name']}", sections)
+                
+                st.download_button(
+                     label="⬇️ Descargar Reporte PDF",
+                     data=pdf_bytes,
+                     file_name=f"Bodega_{project['name']}.pdf",
+                     mime="application/pdf",
+                     type="primary",
+                     key=f"dl_b_pdf_{project_id}"
+                )

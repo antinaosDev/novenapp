@@ -13,5 +13,6 @@ notificationapi-python-server-sdk
 fpdf2
 xlsxwriter
 geopy
+PyMuPDF
 
 # Force rebuild 1

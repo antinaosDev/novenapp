@@ -11,44 +11,54 @@ def render_admin_panel():
     # --- Tab 1: AI Management ---
     with tab_ai:
         st.subheader("Control de Uso de IA")
-        
-        # 1. Configuration
+
+        # --- OCR Monthly Quota ---
         with st.container(border=True):
-            st.write("**Configuración General**")
-            # Use new key: ai_daily_limit
-            current_limit = data.get_config("ai_daily_limit", 3)
-            new_limit = st.number_input("Límite de Llamadas Diarias a la API (AI)", value=int(current_limit), min_value=1)
+            st.write("**📄 Cuota Mensual de Hojas OCR**")
+            st.caption("Cada hoja (página) de PDF analizada por la IA se contabiliza. El contador se reinicia automáticamente cada mes calendario.")
             
-            if st.button("💾 Guardar Límite AI"):
-                success, msg = data.set_config("ai_daily_limit", new_limit)
+            ocr_used = data.get_monthly_ocr_page_count()
+            ocr_limit = data.get_ocr_monthly_limit()
+            ocr_pct = min(ocr_used / max(ocr_limit, 1), 1.0)
+
+            col1, col2 = st.columns(2)
+            col1.metric("Hojas Analizadas (Este Mes)", f"{ocr_used}")
+            col2.metric("Límite Mensual Configurado", f"{ocr_limit}")
+            st.progress(ocr_pct, text=f"{ocr_used} / {ocr_limit} hojas utilizadas ({ocr_pct*100:.1f}%)")
+            
+            st.divider()
+            new_limit = st.number_input("Nuevo Límite Mensual (hojas)", min_value=1, value=int(ocr_limit), step=50)
+            col_a, col_b = st.columns(2)
+            
+            if col_a.button("💾 Guardar Nuevo Límite", type="primary"):
+                success, msg = data.set_config("ocr_monthly_page_limit", new_limit)
+                if success:
+                    st.success(f"Límite actualizado a {new_limit} hojas/mes.")
+                    st.rerun()
+                else:
+                    st.error(f"Error: {msg}")
+            
+            if col_b.button("🔄 Reiniciar Contador del Mes", type="secondary"):
+                if data.reset_monthly_ocr_pages():
+                    st.success("Contador de hojas OCR reiniciado a 0.")
+                    st.rerun()
+                else:
+                    st.error("Error al reiniciar el contador.")
+        
+        st.divider()
+        
+        # --- Legacy Daily AI Call Limit (for other AI features) ---
+        with st.expander("⚙️ Configuración Legacy (Llamadas API Diarias)"):
+            current_limit = data.get_config("ai_daily_limit", 3)
+            new_daily_limit = st.number_input("Límite de Llamadas Diarias a la API (AI)", value=int(current_limit), min_value=1)
+            
+            if st.button("💾 Guardar Límite Diario"):
+                success, msg = data.set_config("ai_daily_limit", new_daily_limit)
                 if success:
                     st.success("Límite actualizado.")
                     st.rerun()
                 else:
                     st.error(f"Error al guardar: {msg}")
-                    
-        st.divider()
-        
-        # 2. Daily Stats
-        st.subheader("Consumo Diario")
-        count = data.get_daily_ai_usage_count()
-        limit = data.get_ai_call_limit()
-        
-        if count > 0:
-            c1, c2 = st.columns(2)
-            c1.metric("Llamadas Hoy", f"{count} / {limit}")
-            # Tokens Logic Removed for Simplicity (or add back if we track it in config, but we just track calls now)
-            c2.progress(min(count/limit, 1.0), text="Progreso Diario")
-        else:
-            st.info("Sin consumo de IA registrado hoy.")
-            
-        # 3. Actions
-        if st.button("🔄 Reiniciar Contadores (Hoy)", type="primary"):
-            if data.reset_ai_usage():
-                st.success("Contadores de hoy reiniciados.")
-                st.rerun()
-            else:
-                st.error("Error al reiniciar.")
 
     # --- Tab 2: Notifications ---
     with tab_notif:

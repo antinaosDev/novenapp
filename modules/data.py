@@ -121,6 +121,7 @@ def delete_project(project_id):
              pass # Lab tests might not exist or schema diff
         
         # 3. Resources/Expenses (Delete Expenses first as they link to Faenas)
+        supabase.table("warehouse_items").delete().eq("project_id", project_id).execute()
         supabase.table("expenses").delete().eq("project_id", project_id).execute()
         supabase.table("faenas").delete().eq("project_id", project_id).execute()
         
@@ -621,7 +622,7 @@ def create_purchase_order(project_id, provider_name, date, total_amount, order_n
         "date": str(date), 
         "total_amount": float(total_amount), 
         "description": description,
-        "status": 'Pendiente',
+        "status": 'Pagada',
         "order_number": order_number
     }
     supabase.table("purchase_orders").insert(data).execute()
@@ -1122,6 +1123,91 @@ def get_ai_call_limit():
     except:
         return 3
 
+# --- Bodega Virtual ---
+@retry_db
+def get_warehouse_items(project_id):
+    response = supabase.table("warehouse_items").select("*").eq("project_id", project_id).execute()
+    df = pd.DataFrame(response.data)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            'id', 'project_id', 'hoja', 'fecha', 'factura', 'cliente', 'rut', 
+            'obra', 'codigo', 'descripcion', 'cantidad', 'p_unitario', 'um', 'total', 'status', 'created_at'
+        ])
+    return df
+
+def add_warehouse_items(project_id, items_list):
+    """Agrega una lista de diccionarios extraídos por la IA a la BD"""
+    inserts = []
+    for item in items_list:
+         insert_data = item.copy()
+         insert_data['project_id'] = project_id
+         
+         for col in ['cantidad', 'p_unitario', 'total']:
+             try: insert_data[col] = float(insert_data.get(col, 0))
+             except: insert_data[col] = 0.0
+             
+         insert_data['status'] = 'En Bodega'
+         inserts.append(insert_data)
+         
+    if inserts:
+        supabase.table("warehouse_items").insert(inserts).execute()
+
+def update_warehouse_item(item_id, item_data):
+    """Actualiza la bd a partir de lo modificado por st.data_editor"""
+    update_payload = {
+        k: v for k, v in item_data.items() 
+        if k not in ['id', 'project_id', 'created_at']
+    }
+    
+    for col in ['cantidad', 'p_unitario', 'total']:
+        if col in update_payload:
+            try: update_payload[col] = float(update_payload[col])
+            except: update_payload[col] = 0.0
+
+    supabase.table("warehouse_items").update(update_payload).eq("id", item_id).execute()
+
+def delete_warehouse_item(item_id):
+    supabase.table("warehouse_items").delete().eq("id", item_id).execute()
 
 
+# --- OCR Pages Monthly Quota ---
+def get_monthly_ocr_page_count():
+    """Returns total OCR pages analyzed this calendar month (globally)."""
+    try:
+        from datetime import datetime
+        month_key = "ocr_pages_" + datetime.now().strftime('%Y-%m')
+        val = get_config(month_key, "0")
+        return int(val)
+    except:
+        return 0
 
+def increment_monthly_ocr_pages(pages):
+    """Increments the global monthly OCR page counter by `pages`."""
+    try:
+        from datetime import datetime
+        month_key = "ocr_pages_" + datetime.now().strftime('%Y-%m')
+        current = get_monthly_ocr_page_count()
+        set_config(month_key, current + pages)
+        return current + pages
+    except Exception as e:
+        print("Error incrementing OCR pages: " + str(e))
+        return 999999
+
+def reset_monthly_ocr_pages():
+    """Resets the current month OCR page counter to 0."""
+    try:
+        from datetime import datetime
+        month_key = "ocr_pages_" + datetime.now().strftime('%Y-%m')
+        set_config(month_key, 0)
+        return True
+    except Exception as e:
+        print("Error resetting OCR pages: " + str(e))
+        return False
+
+def get_ocr_monthly_limit():
+    """Returns the configured limit of OCR pages per month. Default 500."""
+    val = get_config("ocr_monthly_page_limit", "500")
+    try:
+        return int(val)
+    except:
+        return 500

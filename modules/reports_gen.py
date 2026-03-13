@@ -118,7 +118,49 @@ class NovAPP_PDF(FPDF):
 
         self.set_y(y_start + h + 5)
 
-    def add_table(self, df):
+    def get_nb_lines(self, w, txt):
+        """Calcula el número de líneas que ocupará un texto para un ancho dado."""
+        if not txt: return 1
+        cw = self.current_font['cw']
+        if w == 0:
+            w = self.w - self.r_margin - self.x
+        w_max = (w - 2 * self.c_margin) * 1000 / self.font_size
+        s = str(txt).replace("\r", '')
+        nb = len(s)
+        if nb > 0 and s[nb-1] == "\n":
+            nb -= 1
+        sep = -1
+        i = 0
+        j = 0
+        l = 0
+        n = 1
+        while i < nb:
+            c = s[i]
+            if c == "\n":
+                i += 1
+                sep = -1
+                j = i
+                l = 0
+                n += 1
+                continue
+            if c == ' ':
+                sep = i
+            l += cw.get(c, 0)
+            if l > w_max:
+                if sep == -1:
+                    if i == j:
+                        i += 1
+                else:
+                    i = sep + 1
+                sep = -1
+                j = i
+                l = 0
+                n += 1
+            else:
+                i += 1
+        return n
+
+    def add_table(self, df, col_widths=None):
         if df.empty: return
         
         # Format
@@ -126,27 +168,56 @@ class NovAPP_PDF(FPDF):
         self.set_fill_color(230, 240, 235)
         self.set_text_color(0, 0, 0)
         
-        col_width = 190 / len(df.columns)
-        
+        if not col_widths:
+            col_widths = [190 / len(df.columns)] * len(df.columns)
+            
         # Header
-        for col in df.columns:
+        for i, col in enumerate(df.columns):
             sanitized = str(col).encode('latin-1', 'replace').decode('latin-1')
-            self.cell(col_width, 8, sanitized, 1, 0, 'C', True)
+            self.cell(col_widths[i], 8, sanitized, 1, 0, 'C', True)
         self.ln()
         
         # Body
         self.set_font('Arial', '', 8)
         self.set_text_color(50, 50, 50)
         
+        line_height = 5
+        
         for _, row in df.iterrows():
-            for val in row:
-                txt = str(val)
-                try: txt = txt.encode('latin-1', 'replace').decode('latin-1')
-                except: pass
-                # Truncate
-                if len(txt) > 28: txt = txt[:25] + "..."
-                self.cell(col_width, 7, txt, 1, 0, 'L')
-            self.ln()
+            # Calculate max lines needed for this row to adjust height
+            max_lines = 1
+            row_data = []
+            for i, val in enumerate(row):
+                txt = str(val).encode('latin-1', 'replace').decode('latin-1')
+                nb = self.get_nb_lines(col_widths[i], txt)
+                max_lines = max(max_lines, nb)
+                row_data.append(txt)
+            
+            row_height = max_lines * line_height
+            
+            # --- Page Break Logic ---
+            # If the row doesn't fit in the current page, add a new page
+            if self.get_y() + row_height > self.page_break_trigger:
+                self.add_page()
+                # Redraw header on new page for better UX
+                self.set_font('Arial', 'B', 9)
+                self.set_fill_color(230, 240, 235)
+                for i, col in enumerate(df.columns):
+                    sanitized = str(col).encode('latin-1', 'replace').decode('latin-1')
+                    self.cell(col_widths[i], 8, sanitized, 1, 0, 'C', True)
+                self.ln()
+                self.set_font('Arial', '', 8)
+                self.set_text_color(50, 50, 50)
+
+            # Draw cells with wrap support
+            curr_x, curr_y = self.get_x(), self.get_y()
+            for i, txt in enumerate(row_data):
+                # Draw border manually
+                self.rect(curr_x, curr_y, col_widths[i], row_height) 
+                self.multi_cell(col_widths[i], line_height, txt, 0, 'L')
+                curr_x += col_widths[i]
+                self.set_xy(curr_x, curr_y) 
+            self.ln(row_height)
         self.ln(5)
 
     def add_plot(self, fig, title=None):
@@ -180,13 +251,16 @@ def generate_pdf_report(title, sections):
              pdf.chapter_body(sect['content'])
         elif stype == 'table':
              if sect.get('title'): pdf.chapter_title(sect['title'])
-             pdf.add_table(sect['content'])
+             pdf.add_table(sect['content'], col_widths=sect.get('col_widths'))
         elif stype == 'plot':
              pdf.add_plot(sect['content'], title=sect.get('title'))
         elif stype == 'new_page':
              pdf.add_page()
              
-    return bytes(pdf.output())  # Ensure it is bytes, not bytearray
+    out = pdf.output(dest='S')
+    if isinstance(out, str):
+        return out.encode('latin-1')
+    return bytes(out)
 
 def generate_excel(sheets_dict):
     output = io.BytesIO()
