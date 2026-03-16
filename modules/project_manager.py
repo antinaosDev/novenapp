@@ -414,40 +414,50 @@ def render_project_details(project_id):
                 sections.append({"type": "text", "title": "Bodega Virtual", "content": "Detalle de los insumos y materiales registrados en bodega para este proyecto."})
                 
                 # Table 1: Stock Actual
-                stock_df = warehouse_df[['nombre_documento', 'hoja', 'codigo', 'descripcion', 'cantidad', 'p_unitario', 'total', 'status']].copy()
-                stock_df.columns = ['Documento', 'Pág', 'SKU', 'Descripción', 'Cant.', 'P.Unit', 'Total', 'Estado']
+                cols_f = ['descripcion', 'cantidad']
+                names_f = ['Descripción', 'Cant.']
+                if 'cantidad_usada' in warehouse_df.columns:
+                    # Ensure balance is calculated if not present
+                    if 'balance' not in warehouse_df.columns:
+                        warehouse_df['balance'] = warehouse_df['cantidad'] - warehouse_df['cantidad_usada']
+                    cols_f.extend(['cantidad_usada', 'balance'])
+                    names_f.extend(['C.Usada', 'Bal.'])
+                cols_f.append('status')
+                names_f.append('Estado')
+                
+                stock_df = warehouse_df[cols_f].copy()
+                stock_df.columns = names_f
+                
                 sections.append({
                     "type": "table",
                     "content": stock_df,
                     "title": "Inventario de Insumos",
-                    "col_widths": [25, 8, 12, 60, 10, 20, 20, 15] # Total 170 + padding
+                    "col_widths": [95, 20, 20, 20, 35] if 'C.Usada' in stock_df.columns else [140, 30, 20]
                 })
 
                 # Table 2: Summary of Used Materials
                 used_df = warehouse_df[warehouse_df['status'] == 'Usado'].copy()
                 if not used_df.empty:
                     if 'cantidad_usada' in used_df.columns:
-                        summary_used = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
+                        summary_used = used_df.groupby(['descripcion']).agg({
                             'cantidad': 'sum',
-                            'cantidad_usada': 'sum',
-                            'total': 'sum'
+                            'cantidad_usada': 'sum'
                         }).reset_index()
                         summary_used['balance'] = summary_used['cantidad'] - summary_used['cantidad_usada']
-                        summary_used.columns = ['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Total', 'Usado', 'Costo', 'Disp.']
-                        # Reorder
-                        summary_used = summary_used[['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Total', 'Usado', 'Disp.', 'Costo']]
+                        summary_used['status'] = 'Usado'
+                        summary_used.columns = ['Descripción', 'Cant.', 'C.Usada', 'Bal.', 'Estado']
                     else:
-                        summary_used = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
-                            'cantidad': 'sum',
-                            'total': 'sum'
+                        summary_used = used_df.groupby(['descripcion']).agg({
+                            'cantidad': 'sum'
                         }).reset_index()
-                        summary_used.columns = ['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Cant.', 'Costo']
+                        summary_used['status'] = 'Usado'
+                        summary_used.columns = ['Descripción', 'Cant.', 'Estado']
                         
                     sections.append({
                         "type": "table",
                         "content": summary_used,
                         "title": "Resumen de Consumos (Material Usado)",
-                        "col_widths": [25, 8, 55, 12, 12, 12, 12, 22] # Total ~160-170
+                        "col_widths": [95, 20, 20, 20, 35] if 'C.Usada' in summary_used.columns else [140, 30, 20]
                     })
 
             # Generate
@@ -1157,68 +1167,50 @@ def render_project_details(project_id):
                 })
                 sections.append({"type": "text", "title": "Inventario de Insumos", "content": "A continuación se listan todos los materiales y herramientas extraídos en este proyecto, junto a su estado de uso actual."})
                 
-                if 'nombre_documento' in warehouse_df.columns:
-                    cols_rep = ['nombre_documento', 'hoja', 'fecha', 'factura', 'codigo', 'descripcion', 'cantidad']
-                    names_rep = ['Documento', 'Hoja', 'Fecha', 'Doc.', 'SKU', 'Descripción', 'Cant.']
-                    _widths = [25, 7, 15, 15, 12, 55, 10, 15, 15, 18, 18, 15]
+                cols_rep = ['descripcion', 'cantidad']
+                names_rep = ['Descripción', 'Cant.']
 
-                    if 'cantidad_usada' in warehouse_df.columns:
-                        cols_rep.extend(['cantidad_usada', 'balance'])
-                        names_rep.extend(['C.Usada', 'Bal.'])
-                    
-                    cols_rep.extend(['p_unitario', 'total', 'status'])
-                    names_rep.extend(['P.Unit', 'Total', 'Estado'])
-                    
-                    rep_df = warehouse_df[cols_rep].copy()
-                    rep_df.columns = names_rep
-                else:
-                    cols_rep = ['hoja', 'fecha', 'factura', 'codigo', 'descripcion', 'cantidad']
-                    names_rep = ['Hoja', 'Fecha', 'Doc.', 'SKU', 'Descripción', 'Cant.']
-                    _widths = [8, 18, 18, 15, 62, 12, 15, 15, 18, 22, 17]
+                if 'cantidad_usada' in warehouse_df.columns:
+                    cols_rep.extend(['cantidad_usada', 'balance'])
+                    names_rep.extend(['C.Usada', 'Bal.'])
+                
+                cols_rep.append('status')
+                names_rep.append('Estado')
 
-                    if 'cantidad_usada' in warehouse_df.columns:
-                        cols_rep.extend(['cantidad_usada', 'balance'])
-                        names_rep.extend(['C.Usada', 'Bal.'])
-                    
-                    cols_rep.extend(['p_unitario', 'total', 'status'])
-                    names_rep.extend(['P.Unit', 'Total', 'Estado'])
-
-                    rep_df = warehouse_df[cols_rep].copy()
-                    rep_df.columns = names_rep
+                rep_df = warehouse_df[cols_rep].copy()
+                rep_df.columns = names_rep
 
                 sections.append({
                     "type": "table", 
                     "content": rep_df, 
-                    "title": "Listado de Bodega"
+                    "title": "Listado de Bodega",
+                    "col_widths": [95, 20, 20, 20, 35] if 'C.Usada' in rep_df.columns else [140, 30, 20]
                 })
 
                 # Adición de Resumen Agrupado al PDF
                 used_df = warehouse_df[warehouse_df['status'] == 'Usado'].copy()
                 if not used_df.empty:
                     if 'cantidad_usada' in used_df.columns:
-                        summary_used_pdf = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
+                        summary_used_pdf = used_df.groupby(['descripcion']).agg({
                             'cantidad': 'sum',
-                            'cantidad_usada': 'sum',
-                            'total': 'sum'
+                            'cantidad_usada': 'sum'
                         }).reset_index()
                         summary_used_pdf['balance'] = summary_used_pdf['cantidad'] - summary_used_pdf['cantidad_usada']
-                        summary_used_pdf.columns = ['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Total', 'Usado', 'Costo', 'Disp.']
-                        # Reorder
-                        summary_used_pdf = summary_used_pdf[['Documento', 'Pág.', 'Material / Descripción', 'UM', 'Total', 'Usado', 'Disp.', 'Costo']]
+                        summary_used_pdf['status'] = 'Usado'
+                        summary_used_pdf.columns = ['Descripción', 'Cant.', 'C.Usada', 'Bal.', 'Estado']
                     else:
-                        summary_used_pdf = used_df.groupby(['nombre_documento', 'hoja', 'descripcion', 'um']).agg({
-                            'cantidad': 'sum',
-                            'p_unitario': 'mean',
-                            'total': 'sum'
+                        summary_used_pdf = used_df.groupby(['descripcion']).agg({
+                            'cantidad': 'sum'
                         }).reset_index()
-                        summary_used_pdf.columns = ['Documento', 'Pag.', 'Material / Descripción', 'UM', 'Cant.', 'P.Unit', 'Costo']
+                        summary_used_pdf['status'] = 'Usado'
+                        summary_used_pdf.columns = ['Descripción', 'Cant.', 'Estado']
                     
                     sections.append({"type": "text", "title": "Resumen de Consumos (Material Usado)", "content": "Este cuadro resume el total acumulado de materiales que han salido de bodega y han sido marcados como 'Usado'."})
                     sections.append({
                         "type": "table",
                         "content": summary_used_pdf,
                         "title": "Consolidado de Usos",
-                        "col_widths": [30, 8, 55, 12, 15, 15, 15, 25] # Total 175
+                        "col_widths": [95, 20, 20, 20, 35] if 'C.Usada' in summary_used_pdf.columns else [140, 30, 20]
                     })
                 
                 pdf_bytes = reports_gen.generate_pdf_report(f"Bodega: {project['name']}", sections)
