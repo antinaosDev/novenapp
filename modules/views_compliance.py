@@ -54,10 +54,18 @@ def render_compliance():
                     sections.append({"type": "plot", "content": fig2, "title": "Cumplimiento Documental"})
 
                # 3. Table
+               # Format Monto Asignado for PDF
+               pdf_subs = subs_data[['name', 'rut', 'specialty', 'monto_asignado', 'status']].copy()
+               if 'monto_asignado' in pdf_subs.columns:
+                   pdf_subs['monto_asignado'] = pdf_subs['monto_asignado'].fillna(0).apply(lambda x: f"${x:,.0f}".replace(',', '.'))
+                   
                sections.append({
                    "type": "table",
                    "title": "Listado de Empresas",
-                   "content": subs_data[['name', 'rut', 'specialty', 'status']]
+                   "content": pdf_subs.rename(columns={
+                       'name': 'Razón Social', 'rut': 'RUT', 'specialty': 'Especialidad', 
+                       'monto_asignado': 'Monto Asignado', 'status': 'Estado'
+                   })
                })
                
                pdf_bytes = reports_gen.generate_pdf_report("Informe de Compliance", sections)
@@ -71,6 +79,12 @@ def render_compliance():
            pid = st.session_state.get('comp_project_id')
            subs_ex = compliance.get_subcontractors(pid)
            if not subs_ex.empty:
+               # Rename for Excel presentation
+               subs_ex = subs_ex.rename(columns={
+                   'name': 'Razón Social', 'rut': 'RUT', 'contact_email': 'Email',
+                   'contact_phone': 'Teléfono', 'specialty': 'Especialidad', 
+                   'monto_asignado': 'Monto Asignado', 'status': 'Estado'
+               })
                from modules import reports_gen
                xls = reports_gen.generate_excel({"Subcontratos": subs_ex})
                st.download_button("📊 Descargar Excel", xls, file_name="compliance_data.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -111,10 +125,12 @@ def render_compliance():
                 email = c5.text_input("Email Contacto")
                 phone = c6.text_input("Teléfono")
                 
+                monto_asignado = st.number_input("Monto Asignado ($)", min_value=0.0, step=10000.0, format="%.0f")
+                
                 if st.form_submit_button("Registrar Empresa", type="primary"):
                     if name and rut:
-                        compliance.create_subcontractor(project_id, name, rut, email, phone, specialty, rep)
-                        st.toast("Subcontratista registrado.", icon="✅")
+                        compliance.create_subcontractor(project_id, name, rut, email, phone, specialty, rep, monto_asignado)
+                        st.toast("Subcontractor registrado.", icon="✅")
                         st.rerun()
                     else:
                         st.warning("Razón Social y RUT son obligatorios.")
@@ -180,12 +196,12 @@ def render_compliance():
             st.info("No hay subcontratistas registrados en este proyecto.")
         else:
             st.dataframe(
-                subs_df[['name', 'rut', 'specialty', 'contact_email', 'status']],
+                subs_df[['name', 'rut', 'specialty', 'monto_asignado', 'status']],
                 column_config={
                     "name": "Razón Social",
                     "rut": "RUT",
                     "specialty": "Especialidad",
-                    "contact_email": "Email",
+                    "monto_asignado": st.column_config.NumberColumn("Monto Asignado", format="$%d"),
                     "status": st.column_config.SelectboxColumn(
                         "Estado Global",
                         options=["Activo", "Bloqueado", "Pago Autorizado"],
@@ -228,13 +244,15 @@ def render_compliance():
                          e_email = c5.text_input("Email", value=sel_row.get('contact_email', ''))
                          e_phone = c6.text_input("Teléfono", value=sel_row.get('contact_phone', ''))
                          
+                         e_monto = st.number_input("Monto Asignado ($)", value=float(sel_row.get('monto_asignado', 0) if pd.notnull(sel_row.get('monto_asignado')) else 0), step=10000.0, format="%.0f")
+                         
                          st.divider()
                          curr_status = sel_row['status']
                          st_opts = ["Activo", "Bloqueado", "Pago Autorizado"]
                          e_status = st.selectbox("Estado Operativo", st_opts, index=st_opts.index(curr_status) if curr_status in st_opts else 0)
                          
                          if st.form_submit_button("Guardar Cambios"):
-                             compliance.update_subcontractor(sub_id, e_name, e_rut, e_email, e_phone, e_spec, e_rep)
+                             compliance.update_subcontractor(sub_id, e_name, e_rut, e_email, e_phone, e_spec, e_rep, e_monto)
                              if e_status != curr_status:
                                  compliance.update_sub_status(sub_id, e_status)
                              st.toast("Datos actualizados", icon="💾")

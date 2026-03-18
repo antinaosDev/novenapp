@@ -3,14 +3,14 @@ import pandas as pd
 
 # --- PURCHASE ORDERS (Ordenes de Compra) ---
 
-def create_purchase_order(project_id, provider_name, date, total_amount, order_number, description=""):
+def create_purchase_order(project_id, provider_name, date, total_amount, order_number, description="", category="Otros"):
     """
     Creates a new Purchase Order (OC).
     """
-    data.create_purchase_order(project_id, provider_name, date, total_amount, order_number, description)
+    data.create_purchase_order(project_id, provider_name, date, total_amount, order_number, description, category)
 
-def update_purchase_order(po_id, project_id, provider, amount, date, order_number, desc):
-    data.update_purchase_order_full(po_id, project_id, provider, amount, date, order_number, desc)
+def update_purchase_order(po_id, project_id, provider, amount, date, order_number, desc, category="Otros"):
+    data.update_purchase_order_full(po_id, project_id, provider, amount, date, order_number, desc, category)
 
 def get_purchase_orders(project_id=None):
     return data.get_purchase_orders(project_id)

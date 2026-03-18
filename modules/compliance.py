@@ -4,11 +4,11 @@ import pandas as pd
 def get_subcontractors(project_id=None):
     return data.get_subcontractors(project_id)
 
-def create_subcontractor(project_id, name, rut, email, phone, specialty, rep):
-    data.create_subcontractor(project_id, name, rut, email, phone, specialty, rep)
+def create_subcontractor(project_id, name, rut, email, phone, specialty, rep, monto_asignado=0):
+    data.create_subcontractor(project_id, name, rut, email, phone, specialty, rep, monto_asignado)
 
-def update_subcontractor(sub_id, name, rut, email, phone, specialty, rep):
-    data.update_subcontractor_full(sub_id, name, rut, email, phone, specialty, rep)
+def update_subcontractor(sub_id, name, rut, email, phone, specialty, rep, monto_asignado=None):
+    data.update_subcontractor_full(sub_id, name, rut, email, phone, specialty, rep, monto_asignado)
 
 def update_sub_status(sub_id, status):
     data.update_sub_status(sub_id, status)

@@ -74,9 +74,11 @@ def render_finance():
                
                # Section 4: Data Table
                if not orders_df.empty:
-                   disp_df = orders_df[['order_number', 'provider_name', 'total_amount', 'status', 'date']].head(20).copy()
-                   disp_df.columns = ['N° Orden', 'Proveedor', 'Monto', 'Estado', 'Fecha']
-                   disp_df['Monto'] = disp_df['Monto'].apply(lambda x: f"${x:,.0f}")
+                   cols_rep = ['order_number', 'provider_name', 'category', 'total_amount', 'status', 'date'] if 'category' in orders_df.columns else ['order_number', 'provider_name', 'total_amount', 'status', 'date']
+                   col_names = ['N° Orden', 'Proveedor', 'Categoría', 'Monto', 'Estado', 'Fecha'] if 'category' in orders_df.columns else ['N° Orden', 'Proveedor', 'Monto', 'Estado', 'Fecha']
+                   disp_df = orders_df[cols_rep].head(20).copy()
+                   disp_df.columns = col_names
+                   disp_df['Monto'] = disp_df['Monto'].apply(lambda x: f"${x:,.0f}".replace(',', '.'))
                    disp_df['Fecha'] = pd.to_datetime(disp_df['Fecha']).dt.strftime('%d/%m/%Y')
                    
                    sections.append({
@@ -123,11 +125,13 @@ def render_finance():
                 amount = c3.number_input("Monto Total ($)", min_value=0, step=100000)
                 date_val = c4.date_input("Fecha Emisión")
                 
+                cats = ["Materiales", "Subcontratos", "Gastos Generales", "Mano de Obra", "Equipos", "Otros"]
+                category = st.selectbox("Categoría", cats)
                 desc = st.text_area("Descripción / Detalle")
                 
                 if st.form_submit_button("Registrar OC", type="primary"):
                     if provider and amount > 0 and project_id and order_num:
-                        finance.create_purchase_order(project_id, provider, date_val, amount, order_num, desc)
+                        finance.create_purchase_order(project_id, provider, date_val, amount, order_num, desc, category)
                         st.toast("Orden de Compra registrada.", icon="✅") 
                         st.rerun()
                     else:
@@ -178,21 +182,30 @@ def render_finance():
         if orders_df.empty:
             st.info("No hay ordenes de compra registradas para esta selección.")
         else:
+            # Seleccionar solo columnas esenciales para mostrar
+            disp_cols = ['id', 'order_number', 'project_name', 'provider_name', 'date', 'total_amount', 'status']
+            if 'category' in orders_df.columns:
+                disp_cols.insert(3, 'category') # Insertar despues de Proyecto
+                
+            col_cfg = {
+                "id": st.column_config.NumberColumn("ID", format="OC-%d", width="small"),
+                "order_number": st.column_config.TextColumn("N° Orden", width="medium"),
+                "project_name": st.column_config.TextColumn("Proyecto", width="medium"),
+                "provider_name": "Proveedor",
+                "date": st.column_config.DateColumn("Fecha Emisión", format="DD/MM/YYYY"),
+                "total_amount": st.column_config.NumberColumn("Monto", format="$%d"),
+                "status": st.column_config.SelectboxColumn(
+                    "Estado Actual",
+                    options=["Pendiente", "Aprobada", "Pagada"],
+                    required=True
+                )
+            }
+            if 'category' in orders_df.columns:
+                col_cfg["category"] = "Categoría"
+
             st.dataframe(
-                orders_df,
-                column_config={
-                    "id": st.column_config.NumberColumn("ID", format="OC-%d", width="small"),
-                    "order_number": st.column_config.TextColumn("N° Orden", width="medium"),
-                    "project_name": st.column_config.TextColumn("Proyecto", width="medium"),
-                    "provider_name": "Proveedor",
-                    "date": st.column_config.DateColumn("Fecha Emisión", format="DD/MM/YYYY"),
-                    "total_amount": st.column_config.NumberColumn("Monto", format="$%d"),
-                    "status": st.column_config.SelectboxColumn(
-                        "Estado Actual",
-                        options=["Pendiente", "Aprobada", "Pagada"],
-                        required=True
-                    )
-                },
+                orders_df[disp_cols],
+                column_config=col_cfg,
                 hide_index=True,
                 width='stretch'
             )
@@ -245,6 +258,10 @@ def render_finance():
                         d_val = pd.to_datetime('today').date()
                         
                      new_date = c4.date_input("Fecha", value=d_val)
+                     # Cats
+                     cats = ["Materiales", "Subcontratos", "Gastos Generales", "Mano de Obra", "Equipos", "Otros"]
+                     curr_cat = row.get('category', 'Otros')
+                     new_cat = st.selectbox("Categoría", cats, index=cats.index(curr_cat) if curr_cat in cats else 0)
                      new_desc = st.text_area("Descripción", value=row.get('description', ''))
                      
                      st.divider()
@@ -255,7 +272,7 @@ def render_finance():
                      new_status = c5.selectbox("Estado", st_opts, index=st_opts.index(curr_status) if curr_status in st_opts else 0)
                      
                      if st.form_submit_button("💾 Guardar Cambios", type="primary"):
-                         finance.update_purchase_order(po_id, new_proj_id, new_provider, new_amount, new_date, new_order_num, new_desc)
+                         finance.update_purchase_order(po_id, new_proj_id, new_provider, new_amount, new_date, new_order_num, new_desc, new_cat)
                          if new_status != curr_status:
                              data.update_po_status(po_id, new_status)
                          st.toast("Orden actualizada", icon="💾")

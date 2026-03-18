@@ -615,13 +615,14 @@ def get_all_budget_items():
     return pd.DataFrame(response.data)
 
 # --- Finance Support ---
-def create_purchase_order(project_id, provider_name, date, total_amount, order_number, description=""):
+def create_purchase_order(project_id, provider_name, date, total_amount, order_number, description="", category="Otros"):
     data = {
         "project_id": int(project_id), 
         "provider_name": provider_name, 
         "date": str(date), 
         "total_amount": float(total_amount), 
         "description": description,
+        "category": category,
         "status": 'Pagada',
         "order_number": order_number
     }
@@ -644,14 +645,15 @@ def get_purchase_orders(project_id=None):
             
     return pd.DataFrame(data)
 
-def update_purchase_order_full(po_id, project_id, provider, amount, date, order_number, desc):
+def update_purchase_order_full(po_id, project_id, provider, amount, date, order_number, desc, category="Otros"):
      supabase.table("purchase_orders").update({
          "project_id": project_id,
          "provider_name": provider,
          "total_amount": amount,
          "date": str(date),
          "order_number": order_number,
-         "description": desc
+         "description": desc,
+         "category": category
      }).eq("id", po_id).execute()
 
 def update_po_status(po_id, status):
@@ -670,10 +672,10 @@ def get_subcontractors(project_id=None):
     response = query.execute()
     df = pd.DataFrame(response.data)
     if df.empty:
-        return pd.DataFrame(columns=['id', 'project_id', 'name', 'rut', 'contact_email', 'contact_phone', 'specialty', 'representative', 'status'])
+        return pd.DataFrame(columns=['id', 'project_id', 'name', 'rut', 'contact_email', 'contact_phone', 'specialty', 'representative', 'monto_asignado', 'status'])
     return df
 
-def create_subcontractor(project_id, name, rut, email, phone, specialty, rep):
+def create_subcontractor(project_id, name, rut, email, phone, specialty, rep, monto_asignado=0):
     data = {
         "project_id": project_id,
         "name": name, 
@@ -682,19 +684,24 @@ def create_subcontractor(project_id, name, rut, email, phone, specialty, rep):
         "contact_phone": phone,
         "specialty": specialty,
         "representative": rep,
+        "monto_asignado": monto_asignado,
         "status": "Activo"
     }
     supabase.table("subcontractors").insert(data).execute()
 
-def update_subcontractor_full(sub_id, name, rut, email, phone, specialty, rep):
-    supabase.table("subcontractors").update({
+def update_subcontractor_full(sub_id, name, rut, email, phone, specialty, rep, monto_asignado=None):
+    payload = {
         "name": name, 
         "rut": rut, 
         "contact_email": email,
         "contact_phone": phone,
         "specialty": specialty,
         "representative": rep
-    }).eq("id", sub_id).execute()
+    }
+    if monto_asignado is not None:
+        payload["monto_asignado"] = monto_asignado
+        
+    supabase.table("subcontractors").update(payload).eq("id", sub_id).execute()
 
 def update_sub_status(sub_id, status):
     supabase.table("subcontractors").update({"status": status}).eq("id", sub_id).execute()

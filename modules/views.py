@@ -286,7 +286,8 @@ def render_dashboard():
              if not s.empty:
                  s = s.rename(columns={
                      'name': 'Razón Social', 'rut': 'RUT', 'contact_email': 'Email',
-                     'contact_phone': 'Teléfono', 'specialty': 'Especialidad', 'status': 'Estado'
+                     'contact_phone': 'Teléfono', 'specialty': 'Especialidad', 
+                     'monto_asignado': 'Monto Asignado', 'status': 'Estado'
                  })
 
              xls = reports_gen.generate_excel({"Proyectos": p, "Gastos": e, "Subcontratos": s})
@@ -425,10 +426,11 @@ def render_dashboard():
                      # Top Expenses Table
                      top_exp = rp_exp.sort_values("amount", ascending=False).head(7)
                      if not top_exp.empty:
-                          top_exp_dis = top_exp[['date', 'category', 'amount', 'project']].copy()
-                          top_exp_dis['date'] = top_exp_dis['date'].dt.strftime('%d/%m')
-                          top_exp_dis.columns = ['Fecha', 'Ítem', 'Monto', 'Proyecto']
-                          sections.append({"type": "table", "content": top_exp_dis, "title": "Desembolsos Mayores Recientes"})
+                           top_exp_dis = top_exp[['date', 'category', 'amount', 'project']].copy()
+                           top_exp_dis['date'] = top_exp_dis['date'].dt.strftime('%d/%m')
+                           top_exp_dis.columns = ['Fecha', 'Ítem', 'Monto', 'Proyecto']
+                           top_exp_dis['Monto'] = top_exp_dis['Monto'].apply(lambda x: f"${x:,.0f}".replace(',', '.'))
+                           sections.append({"type": "table", "content": top_exp_dis, "title": "Desembolsos Mayores Recientes"})
 
                      # Generate
                      pdf_bytes = reports_gen.generate_pdf_report("Reporte de Gestión Ejecutiva", sections)

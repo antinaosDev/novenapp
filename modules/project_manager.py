@@ -256,7 +256,7 @@ def render_project_details(project_id):
 
     # --- Header Section (Native) ---
     st.caption("Proyectos / Detalle")
-    c_title, c_stats = st.columns([2, 1])
+    c_title, c_stats = st.columns([1.3, 1])
     
     with c_title:
         st.title(project['name'])
@@ -264,8 +264,13 @@ def render_project_details(project_id):
         
     with c_stats:
         c_stat1, c_stat2 = st.columns(2)
-        c_stat1.metric("Presupuesto", budget_str)
-        c_stat2.metric("Estado", project['status'])
+        with c_stat1:
+            with st.container(border=True):
+                st.metric("Presupuesto", budget_str)
+        with c_stat2:
+            with st.container(border=True):
+                st.metric("Estado", project['status'])
+
     
     # Export Button (New Project Fiche)
     if st.button("📄 Generar Ficha de Proyecto", key="btn_export_pdf", help="Generar informe ejecutivo del proyecto"):
@@ -393,9 +398,14 @@ def render_project_details(project_id):
             
             # 4. Recent Expenses (Table)
             if not valid_orders.empty:
-                 last_orders = valid_orders.sort_values('date', ascending=False)[['date', 'provider_name', 'description', 'total_amount']]
+                 cols_view = ['date', 'provider_name', 'category', 'description', 'total_amount'] if 'category' in valid_orders.columns else ['date', 'provider_name', 'description', 'total_amount']
+                 col_names = ['Fecha', 'Proveedor', 'Categoría', 'Detalle', 'Monto'] if 'category' in valid_orders.columns else ['Fecha', 'Proveedor', 'Detalle', 'Monto']
+                 
+                 last_orders = valid_orders.sort_values('date', ascending=False)[cols_view]
                  last_orders['date'] = pd.to_datetime(last_orders['date']).dt.strftime('%d/%m/%Y')
-                 last_orders.columns = ['Fecha', 'Proveedor', 'Detalle', 'Monto']
+                 last_orders.columns = col_names
+                 if 'Monto' in last_orders.columns:
+                     last_orders['Monto'] = last_orders['Monto'].apply(lambda x: f"${x:,.0f}".replace(',', '.'))
                  sections.append({"type": "table", "content": last_orders, "title": "Gastos Registrados"})
 
             # 5. Faenas
@@ -427,6 +437,10 @@ def render_project_details(project_id):
                 
                 stock_df = warehouse_df[cols_f].copy()
                 stock_df.columns = names_f
+                # Format quantities to string to guarantee 1 decimal place
+                for col in ['Cant.', 'C.Usada', 'Bal.']:
+                    if col in stock_df.columns:
+                        stock_df[col] = pd.to_numeric(stock_df[col], errors='coerce').fillna(0).apply(lambda x: f"{float(x):.1f}")
                 
                 sections.append({
                     "type": "table",
@@ -446,12 +460,15 @@ def render_project_details(project_id):
                         summary_used['balance'] = summary_used['cantidad'] - summary_used['cantidad_usada']
                         summary_used['status'] = 'Usado'
                         summary_used.columns = ['Descripción', 'Cant.', 'C.Usada', 'Bal.', 'Estado']
+                        for col in ['Cant.', 'C.Usada', 'Bal.']:
+                            summary_used[col] = pd.to_numeric(summary_used[col], errors='coerce').fillna(0).apply(lambda x: f"{float(x):.1f}")
                     else:
                         summary_used = used_df.groupby(['descripcion']).agg({
                             'cantidad': 'sum'
                         }).reset_index()
                         summary_used['status'] = 'Usado'
                         summary_used.columns = ['Descripción', 'Cant.', 'Estado']
+                        summary_used['Cant.'] = pd.to_numeric(summary_used['Cant.'], errors='coerce').fillna(0).apply(lambda x: f"{float(x):.1f}")
                         
                     sections.append({
                         "type": "table",
@@ -581,19 +598,77 @@ def render_project_details(project_id):
         orders = data.get_purchase_orders(project_id)
         
         if not orders.empty:
-            # Stats
-            total_spent = orders[orders['status'] != 'Rechazada']['total_amount'].sum()
-            st.metric("Total Gastado (OC Aprob/Pend)", f"${total_spent:,.0f}")
+            # --- FILTERS ---
+            c_f1, c_f2 = st.columns(2)
+            stat_opts = ["Todos"] + list(orders['status'].unique())
+            cat_opts = ["Todas"] + list(orders.get('category', pd.Series(['Otros'])).dropna().unique())
+            f_stat = c_f1.selectbox("Filtrar Estado:", stat_opts, key=f"f_stat_{project_id}")
+            f_cat = c_f2.selectbox("Filtrar Categoría:", cat_opts, key=f"f_cat_{project_id}")
             
+            # Apply Filters
+            filtered_orders = orders.copy()
+            if f_stat != "Todos":
+                filtered_orders = filtered_orders[filtered_orders['status'] == f_stat]
+            if f_cat != "Todas" and 'category' in filtered_orders.columns:
+                filtered_orders = filtered_orders[filtered_orders['category'] == f_cat]
+
+            # --- CHARTS ---
+            if 'category' in filtered_orders.columns and not filtered_orders.empty:
+                st.write("**Desglose de Gasto por Categoría**")
+                cat_totals = filtered_orders.groupby('category')['total_amount'].sum().reset_index()
+                cat_totals.columns = ['Categoría', 'Monto']
+                
+                # Max value for headroom
+                max_val = cat_totals['Monto'].max() if not cat_totals.empty else 1000
+                
+                # Plotly Bar Chart
+                fig_exp = px.bar(
+                    cat_totals, 
+                    x='Categoría', 
+                    y='Monto', 
+                    title=None, 
+                    color='Categoría',
+                    color_discrete_sequence=px.colors.qualitative.Pastel
+                )
+                fig_exp.update_traces(
+                    texttemplate='$%{y:,.0f}', 
+                    textposition='outside',
+                    hovertemplate='<b>%{x}</b><br>Gasto: $%{y:,.0f}<extra></extra>'
+                )
+                fig_exp.update_layout(
+                    height=300,
+                    margin=dict(t=30, l=10, r=10, b=10),
+                    font=dict(family="sans-serif", color="#64748b"),
+                    showlegend=False
+                )
+                fig_exp.update_yaxes(
+                    tickprefix="$", 
+                    tickformat=",.0f",
+                    range=[0, max_val * 1.15]
+                )
+                st.plotly_chart(fig_exp, use_container_width=True)
+
+            # Stats
+            total_spent = filtered_orders[filtered_orders['status'] != 'Rechazada']['total_amount'].sum()
+            st.metric("Total Gastado (Filtrado)", f"${total_spent:,.0f}")
+            
+            cols_to_view = ['date', 'provider_name', 'total_amount', 'status', 'description']
+            if 'category' in filtered_orders.columns:
+                cols_to_view.insert(2, 'category')
+                
+            col_cfg = {
+                "date": st.column_config.DateColumn("Fecha Emisión", format="DD/MM/YYYY"),
+                "provider_name": "Proveedor",
+                "total_amount": st.column_config.NumberColumn("Monto Total", format="$%d"),
+                "status": "Estado",
+                "description": "Detalle / Ítem"
+            }
+            if 'category' in filtered_orders.columns:
+                col_cfg["category"] = "Categoría"
+
             st.dataframe(
-                orders[['date', 'provider_name', 'total_amount', 'status', 'description']],
-                column_config={
-                    "date": st.column_config.DateColumn("Fecha Emisión", format="DD/MM/YYYY"),
-                    "provider_name": "Proveedor",
-                    "total_amount": st.column_config.NumberColumn("Monto Total", format="$%d"),
-                    "status": "Estado",
-                    "description": "Detalle / Ítem"
-                },
+                filtered_orders[cols_to_view],
+                column_config=col_cfg,
                 width='stretch',
                 hide_index=True
             )
@@ -612,13 +687,14 @@ def render_project_details(project_id):
                 
                 c3, c4 = st.columns(2)
                 est_amount = c3.number_input("Monto Estimado ($)", min_value=0.0, step=1000.0)
-                # Date default today
+                cats = ["Materiales", "Subcontratos", "Gastos Generales", "Mano de Obra", "Equipos", "Otros"]
+                category = c4.selectbox("Categoría de Gasto", cats)
                 
                 if st.form_submit_button("Enviar Solicitud", type="primary"):
                      if item_desc:
                          temp_order_num = f"REQ-{int(time.time())}"
                          # Fix: Cast types
-                         data.create_purchase_order(int(project_id), provider if provider else "Por definir", datetime.now(), float(est_amount), temp_order_num, description=item_desc)
+                         data.create_purchase_order(int(project_id), provider if provider else "Por definir", datetime.now(), float(est_amount), temp_order_num, description=item_desc, category=category)
                          st.toast("Solicitud enviada a Finanzas", icon="📨")
                          st.rerun()
                      else:
@@ -823,26 +899,23 @@ def render_project_details(project_id):
                  
                  # Metrics
                  st.markdown("##### 💵 Ejecución Financiera (Caja)")
-                 m1, m2, m3 = st.columns(3)
-                 m1.metric("Presupuesto Oficial", f"${global_budget:,.0f}", help="Presupuesto Global definido en la creación del proyecto")
-                 m2.metric("Gasto Real (OC)", f"${total_actual:,.0f}", help="Suma de Órdenes de Compra (No Rechazadas)")
+                 m1, m2 = st.columns(2)
+                 m1.metric("Gasto Real (OC)", f"${total_actual:,.0f}", help="Suma de Órdenes de Compra (No Rechazadas)")
                  
                  diff_cash = global_budget - total_actual
-                 m3.metric("Saldo Disponible", f"${diff_cash:,.0f}", delta_color="normal" if diff_cash >= 0 else "inverse", help="Presupuesto Oficial - Gasto Real")
+                 m2.metric("Saldo Disponible", f"${diff_cash:,.0f}", delta_color="normal" if diff_cash >= 0 else "inverse", help="Presupuesto Oficial - Gasto Real")
                  
                  st.progress(min(total_actual / global_budget, 1.0) if global_budget > 0 else 0)
                  
                  st.divider()
                  st.markdown("##### 🧩 Planificación (Asignación)")
                  
-                 c_plan1, c_plan2, c_plan3 = st.columns(3)
-                 c_plan1.metric("Asignado en Ítems", f"${itemized_budget:,.0f}", help="Suma de los ítems creados abajo")
+                 c_plan1, c_plan2 = st.columns(2)
+                 alloc_pct = (itemized_budget / global_budget * 100) if global_budget > 0 else 0
+                 c_plan1.metric("Asignado en Ítems", f"${itemized_budget:,.0f}", help=f"{alloc_pct:.1f}% del Presupuesto Oficial")
                  
                  diff_alloc = global_budget - itemized_budget
-                 c_plan2.metric("Por Asignar", f"${diff_alloc:,.0f}", help="Presupuesto Oficial - Asignado en Ítems", delta_color="off")
-                 
-                 alloc_pct = (itemized_budget / global_budget * 100) if global_budget > 0 else 0
-                 c_plan3.metric("% Asignado", f"{alloc_pct:.1f}%")
+                 c_plan2.metric("Por Asignar", f"${diff_alloc:,.0f}", help="Presupuesto Oficial - Asignado en Ítems")
 
                  if diff_alloc < 0:
                      st.warning(f"⚠️ Has asignado ${abs(diff_alloc):,.0f} más que el presupuesto oficial.")
@@ -1179,6 +1252,11 @@ def render_project_details(project_id):
 
                 rep_df = warehouse_df[cols_rep].copy()
                 rep_df.columns = names_rep
+                
+                # Format quantities to string to guarantee 1 decimal place inside PDF
+                for col in ['Cant.', 'C.Usada', 'Bal.']:
+                    if col in rep_df.columns:
+                        rep_df[col] = pd.to_numeric(rep_df[col], errors='coerce').fillna(0).apply(lambda x: f"{float(x):.1f}")
 
                 sections.append({
                     "type": "table", 

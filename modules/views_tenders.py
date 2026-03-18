@@ -68,7 +68,7 @@ def render_tenders():
                      if not tenders_df.empty:
                          display_df = tenders_df[['title', 'budget_estimated', 'type', 'status']].copy()
                          display_df.columns = ['Título', 'Presupuesto', 'Tipo', 'Estado']
-                         display_df['Presupuesto'] = display_df['Presupuesto'].apply(lambda x: f"${x:,.0f}")
+                         display_df['Presupuesto'] = display_df['Presupuesto'].apply(lambda x: f"${x:,.0f}".replace(',', '.'))
                          sections.append({"type": "table", "content": display_df, "title": "Detalle de Licitaciones"})
                          
                      pdf_bytes = reports_gen.generate_pdf_report("Reporte de Gestión de Licitaciones", sections)
