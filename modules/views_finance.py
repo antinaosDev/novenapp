@@ -49,14 +49,16 @@ def render_finance():
                     colors = {'Pendiente': '#f59e0b', 'Aprobada': '#10b981', 'Pagada': '#3b82f6'}
                     c_list = [colors.get(x, '#9ca3af') for x in status_counts.index]
                     
-                    wedges, texts, autotexts = ax1.pie(status_counts, labels=status_counts.index, autopct='%1.1f%%', colors=c_list, pctdistance=0.85)
+                    wedges, texts, autotexts = ax1.pie(status_counts, autopct='%1.1f%%', colors=c_list, pctdistance=0.75)
+                    # Use legend instead of labels on slices for cleaner rendering
+                    ax1.legend(wedges, status_counts.index, title="Estados", loc="center left", bbox_to_anchor=(1, 0.5))
                     
                     # Draw Circle
                     centre_circle = plt.Circle((0,0),0.70,fc='white')
                     fig1.gca().add_artist(centre_circle)
                     
                     ax1.set_title("Distribución de Órdenes por Estado")
-                    plt.setp(autotexts, size=9, weight="bold", color="white")
+                    plt.setp(autotexts, size=10, weight="bold", color="#1e293b")
                     sections.append({"type": "plot", "title": "Estado de la Cartera", "content": fig1})
                     
                     # Chart 2: Amounts by Project
@@ -67,8 +69,12 @@ def render_finance():
                         ax2.set_title("Gasto Acumulado por Proyecto")
                         ax2.set_xlabel("Monto Total ($)")
                         ax2.grid(axis='x', linestyle='--', alpha=0.3)
-                        # Format X axis currency
-                        ax2.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x:,.0f}'))
+                        # Format X axis currency list with M/K suffixes to avoid overlapping
+                        def compact_money(x, p):
+                            if x >= 1_000_000: return f'${x/1e6:.1f}M'
+                            if x >= 1_000: return f'${x/1e3:.0f}K'
+                            return f'${x:,.0f}'
+                        ax2.xaxis.set_major_formatter(plt.FuncFormatter(compact_money))
                         plt.tight_layout()
                         sections.append({"type": "plot", "title": "Análisis de Gasto", "content": fig2})
                
