@@ -1,362 +1,377 @@
 import streamlit as st
-from supabase import create_client, Client
 import pandas as pd
-from datetime import datetime
-import time
-import httpx
-import httpcore
+from datetime import datetime, timedelta
+import gspread
+from google.oauth2.service_account import Credentials
+import json
+import os
 
-# Initialize Supabase Client
+# --- Config ---
+SPREADSHEET_ID = "1dFeMiekQKnA4xRPju9Wd62JWd_4fmW-xvqZ7XpdXDEY"
+CREDENTIALS_FILE = "google_credentials.json"
+
+# --- Google Sheets Connection ---
+def _get_credentials():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    try:
+        gcp = st.secrets["gcp"]
+        info = {
+            "type": gcp["type"],
+            "project_id": gcp["project_id"],
+            "private_key_id": gcp["private_key_id"],
+            "private_key": gcp["private_key"],
+            "client_email": gcp["client_email"],
+            "client_id": gcp["client_id"],
+            "auth_uri": gcp["auth_uri"],
+            "token_uri": gcp["token_uri"],
+            "auth_provider_x509_cert_url": gcp["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": gcp["client_x509_cert_url"],
+            "universe_domain": gcp.get("universe_domain", "googleapis.com"),
+        }
+        return Credentials.from_service_account_info(info, scopes=scope)
+    except Exception:
+        return Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scope)
+
 @st.cache_resource
-def init_supabase():
-    url = st.secrets["supabase"]["URL"]
-    key = st.secrets["supabase"]["KEY"]
-    return create_client(url, key)
+def get_gs_client():
+    creds = _get_credentials()
+    return gspread.authorize(creds)
 
-supabase: Client = init_supabase()
+@st.cache_resource
+def get_sheet():
+    client = get_gs_client()
+    return client.open_by_key(SPREADSHEET_ID)
 
-def retry_db(func):
-    """Decorator to retry Supabase queries on connection error."""
-    def wrapper(*args, **kwargs):
-        retries = 5
-        base_delay = 2
-        for attempt in range(retries):
+def read_worksheet(worksheet_name, expected_columns=None):
+    """Read a worksheet and return a DataFrame."""
+    try:
+        ws = get_sheet().worksheet(worksheet_name)
+        records = ws.get_all_records()
+        if not records:
+            return pd.DataFrame(columns=expected_columns or [])
+        df = pd.DataFrame(records)
+        return df
+    except Exception as e:
+        print(f"Error reading {worksheet_name}: {e}")
+        return pd.DataFrame(columns=expected_columns or [])
+
+def write_worksheet(worksheet_name, df):
+    """Write a DataFrame back to a worksheet (full replace)."""
+    try:
+        ws = get_sheet().worksheet(worksheet_name)
+        ws.clear()
+        if df.empty:
+            ws.update([["(sin datos)"]], "A1")
+            return
+        headers = list(df.columns)
+        values = df.values.tolist()
+        data = [headers] + values
+        ws.update(data, "A1")
+    except Exception as e:
+        print(f"Error writing {worksheet_name}: {e}")
+
+def append_row(worksheet_name, row_dict):
+    """Append a single row to a worksheet."""
+    try:
+        ws = get_sheet().worksheet(worksheet_name)
+        headers = ws.row_values(1)
+        row_values = [str(row_dict.get(h, "")) if row_dict.get(h) is not None else "" for h in headers]
+        ws.append_row(row_values)
+    except Exception as e:
+        print(f"Error appending to {worksheet_name}: {e}")
+
+def update_row_by_id(worksheet_name, row_id, update_dict):
+    """Find a row by 'id' column and update fields."""
+    try:
+        ws = get_sheet().worksheet(worksheet_name)
+        headers = ws.row_values(1)
+        if 'id' not in headers:
+            return
+        id_col = headers.index('id') + 1
+        all_rows = ws.get_all_values()
+        for i, row in enumerate(all_rows[1:], start=2):
+            if row[id_col - 1] == str(row_id):
+                for key, value in update_dict.items():
+                    if key in headers:
+                        col = headers.index(key) + 1
+                        ws.update_cell(i, col, str(value) if value is not None else "")
+                break
+    except Exception as e:
+        print(f"Error updating {worksheet_name} id={row_id}: {e}")
+
+def delete_row_by_id(worksheet_name, row_id):
+    """Delete rows matching the given id."""
+    try:
+        ws = get_sheet().worksheet(worksheet_name)
+        headers = ws.row_values(1)
+        if 'id' not in headers:
+            return
+        id_col = headers.index('id') + 1
+        all_rows = ws.get_all_values()
+        for i, row in enumerate(all_rows[1:], start=2):
+            if row[id_col - 1] == str(row_id):
+                ws.delete_rows(i)
+                break
+    except Exception as e:
+        print(f"Error deleting from {worksheet_name} id={row_id}: {e}")
+
+def get_next_id(worksheet_name):
+    """Get next auto-increment ID."""
+    try:
+        ws = get_sheet().worksheet(worksheet_name)
+        all_rows = ws.get_all_values()
+        if len(all_rows) <= 1:
+            return 1
+        ids = []
+        for row in all_rows[1:]:
             try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                # Check for ReadError, Resource unavailable, or Network errors
-                error_msg = str(e)
-                # Catch specific network related errors or string matches
-                is_network_error = (
-                    "Resource temporarily unavailable" in error_msg or 
-                    "ReadError" in error_msg or 
-                    "ConnectError" in error_msg or
-                    isinstance(e, (httpx.ReadError, httpx.ConnectError, httpcore.ReadError, httpcore.ConnectError))
-                )
-                
-                if is_network_error:
-                    if attempt < retries - 1:
-                        sleep_time = base_delay * (attempt + 1)
-                        print(f"Database connection error: {e}. Retrying in {sleep_time}s... (Attempt {attempt+1}/{retries})")
-                        time.sleep(sleep_time)
-                        continue
-                raise e
-        return func(*args, **kwargs)
-    return wrapper
+                ids.append(int(row[0]))
+            except (ValueError, IndexError):
+                continue
+        return max(ids) + 1 if ids else 1
+    except:
+        return 1
 
+# --- Initialization ---
 def init_db():
-    """Checks if connection works. Logic moved to Supabase Management via SQL Editor."""
     pass
 
-# --- CRUD Functions ---
-
-# Projects
+# --- Projects ---
 def add_project(name, description, budget, start_date, end_date, lat=-33.4489, lon=-70.6693):
-    data = {
-        "name": name,
-        "description": description,
-        "budget_total": budget,
-        "start_date": str(start_date),
-        "end_date": str(end_date),
-        "latitude": lat,
-        "longitude": lon,
-        "status": "Activo"
+    new_id = get_next_id("projects")
+    row = {
+        "id": new_id, "name": name, "description": description,
+        "budget_total": budget, "start_date": str(start_date),
+        "end_date": str(end_date), "status": "Activo",
+        "latitude": lat, "longitude": lon
     }
-    supabase.table("projects").insert(data).execute()
+    append_row("projects", row)
 
-@retry_db
 def get_projects():
-    response = supabase.table("projects").select("*").execute()
-    df = pd.DataFrame(response.data)
+    df = read_worksheet("projects", [
+        'id', 'name', 'description', 'budget_total',
+        'start_date', 'end_date', 'status', 'latitude', 'longitude'
+    ])
     if df.empty:
-        # Return with expected columns to prevent KeyError in views
         return pd.DataFrame(columns=[
-            'id', 'name', 'description', 'budget_total', 
+            'id', 'name', 'description', 'budget_total',
             'start_date', 'end_date', 'status', 'latitude', 'longitude'
         ])
+    for col in ['budget_total', 'latitude', 'longitude']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
     return df
 
 def update_project(project_id, name, description, budget, start_date, end_date, status="Activo", lat=-33.4489, lon=-70.6693):
-    data = {
-        "name": name, 
-        "description": description, 
-        "budget_total": budget,
-        "start_date": str(start_date),
-        "end_date": str(end_date),
-        "status": status,
-        "latitude": lat,
-        "longitude": lon
-    }
-    supabase.table("projects").update(data).eq("id", project_id).execute()
+    update_row_by_id("projects", project_id, {
+        "name": name, "description": description, "budget_total": budget,
+        "start_date": str(start_date), "end_date": str(end_date),
+        "status": status, "latitude": lat, "longitude": lon
+    })
 
 def delete_project(project_id):
-    # Manual Cascade Deletion to handle Foreign Keys
-    try:
-        # 1. Assignments
-        supabase.table("project_assignments").delete().eq("project_id", project_id).execute()
-        
-        # 2. Operational Data (Tasks, Quality)
-        supabase.table("tasks").delete().eq("project_id", project_id).execute()
-        supabase.table("quality_logs").delete().eq("project_id", project_id).execute()
-        supabase.table("phases").delete().eq("project_id", project_id).execute()
-        
-        # 2a. More Ops Data (Subcontractors & Lab Tests)
-        # Handle Compliance Docs before Subcontractors
+    sheets_to_check = [
+        "project_assignments", "tasks", "quality_logs", "phases",
+        "subcontractors", "lab_tests", "warehouse_items", "expenses",
+        "faenas", "purchase_orders", "tenders", "budget_items",
+        "comments"
+    ]
+    for sheet_name in sheets_to_check:
         try:
-             subs_res = supabase.table("subcontractors").select("id").eq("project_id", project_id).execute()
-             sub_ids = [s['id'] for s in subs_res.data]
-             if sub_ids:
-                 # Try to delete documents if table exists
-                 try: supabase.table("compliance_documents").delete().in_("subcontractor_id", sub_ids).execute()
-                 except: pass
+            ws = get_sheet().worksheet(sheet_name)
+            headers = ws.row_values(1)
+            if 'project_id' not in headers:
+                continue
+            pid_col = headers.index('project_id') + 1
+            all_rows = ws.get_all_values()
+            rows_to_delete = []
+            for i, row in enumerate(all_rows[1:], start=2):
+                if len(row) >= pid_col and row[pid_col - 1] == str(project_id):
+                    rows_to_delete.append(i)
+            for row_idx in reversed(rows_to_delete):
+                ws.delete_rows(row_idx)
         except:
-             pass
-        
-        # Always attempt to delete subcontractors
-        supabase.table("subcontractors").delete().eq("project_id", project_id).execute() 
-             
-        try:
-             supabase.table("lab_tests").delete().eq("project_id", project_id).execute()
-        except:
-             pass # Lab tests might not exist or schema diff
-        
-        # 3. Resources/Expenses (Delete Expenses first as they link to Faenas)
-        supabase.table("warehouse_items").delete().eq("project_id", project_id).execute()
-        supabase.table("expenses").delete().eq("project_id", project_id).execute()
-        supabase.table("faenas").delete().eq("project_id", project_id).execute()
-        
-        # 4. Purchase Orders
-        supabase.table("purchase_orders").delete().eq("project_id", project_id).execute()
-        
-        # 5. Tenders, Contracts & Guarantees (Deep Clean)
-        tenders_res = supabase.table("tenders").select("id").eq("project_id", project_id).execute()
-        for tender in tenders_res.data:
-            # Delete Contracts for this tender
-            contracts_res = supabase.table("contracts").select("id").eq("tender_id", tender['id']).execute()
-            for contract in contracts_res.data:
-                # Delete Guarantees
-                supabase.table("guarantees").delete().eq("contract_id", contract['id']).execute()
-                # Delete Contract
-                supabase.table("contracts").delete().eq("id", contract['id']).execute()
-            
-            # Delete Tender
-            supabase.table("tenders").delete().eq("id", tender['id']).execute()
-            
-        # 6. Budget Items & Comments (New)
-        supabase.table("budget_items").delete().eq("project_id", project_id).execute()
-        supabase.table("comments").delete().eq("project_id", project_id).execute()
-        
-        # Finally delete Project
-        supabase.table("projects").delete().eq("id", project_id).execute()
-        return True
-    except Exception as e:
-        print(f"Error deleting project: {e}")
-        return False
+            pass
 
-@retry_db
+    delete_row_by_id("projects", project_id)
+    return True
+
 def get_projects_expiring_soon(days_threshold):
-    """Returns active projects ending within the next X days."""
     try:
-        from datetime import datetime, timedelta
         now = datetime.now()
         target_date = now + timedelta(days=days_threshold)
-        
-        # Filter: end_date >= today AND end_date <= target_date AND status != 'Completado'
         today_str = now.strftime('%Y-%m-%d')
         target_str = target_date.strftime('%Y-%m-%d')
-        
-        # Note: Supabase-py simple filter might need chaining
-        # .gte("end_date", today_str).lte("end_date", target_str)
-        
-        response = supabase.table("projects").select("*")\
-            .neq("status", "Completado")\
-            .neq("status", "En Cierre")\
-            .gte("end_date", today_str)\
-            .lte("end_date", target_str)\
-            .execute()
-            
-        return pd.DataFrame(response.data)
+        df = get_projects()
+        if df.empty:
+            return df
+        df = df[df['status'] != 'Completado']
+        df = df[df['status'] != 'En Cierre']
+        df = df[df['end_date'].between(today_str, target_str)]
+        return df
     except Exception as e:
         print(f"Error checking project deadlines: {e}")
         return pd.DataFrame()
 
-# Contracts & Guarantees Expiration
-@retry_db
 def get_contracts_expiring_soon(days_threshold):
     try:
-        from datetime import datetime, timedelta
         now = datetime.now()
         target_date = now + timedelta(days=days_threshold)
         today_str = now.strftime('%Y-%m-%d')
         target_str = target_date.strftime('%Y-%m-%d')
-        
-        response = supabase.table("contracts").select("*")\
-            .neq("status", "Terminado")\
-            .gte("end_date", today_str)\
-            .lte("end_date", target_str)\
-            .execute()
-        return pd.DataFrame(response.data)
+        df = read_worksheet("contracts")
+        if df.empty:
+            return df
+        df = df[df['status'] != 'Terminado']
+        df = df[df['end_date'].between(today_str, target_str)]
+        return df
     except Exception as e:
         print(f"Error checking contracts: {e}")
         return pd.DataFrame()
 
-@retry_db
 def get_guarantees_expiring_soon(days_threshold):
     try:
-        from datetime import datetime, timedelta
         now = datetime.now()
         target_date = now + timedelta(days=days_threshold)
         today_str = now.strftime('%Y-%m-%d')
         target_str = target_date.strftime('%Y-%m-%d')
-        
-        response = supabase.table("guarantees").select("*")\
-            .eq("status", "Vigente")\
-            .gte("expiration_date", today_str)\
-            .lte("expiration_date", target_str)\
-            .execute()
-        return pd.DataFrame(response.data)
+        df = read_worksheet("guarantees")
+        if df.empty:
+            return df
+        df = df[df['status'] == 'Vigente']
+        df = df[df['expiration_date'].between(today_str, target_str)]
+        return df
     except Exception as e:
         print(f"Error checking guarantees: {e}")
         return pd.DataFrame()
 
-# Faenas
+# --- Faenas ---
 def add_faena(project_id, name, supervisor):
-    data = {
-        "project_id": project_id,
-        "name": name,
-        "supervisor": supervisor
-    }
-    supabase.table("faenas").insert(data).execute()
+    new_id = get_next_id("faenas")
+    append_row("faenas", {"id": new_id, "project_id": project_id, "name": name, "supervisor": supervisor})
 
 def get_faenas(project_id=None):
-    query = supabase.table("faenas").select("*")
-    if project_id:
-        query = query.eq("project_id", project_id)
-    response = query.execute()
-    return pd.DataFrame(response.data)
+    df = read_worksheet("faenas", ['id', 'project_id', 'name', 'supervisor'])
+    if df.empty:
+        return df
+    if project_id is not None:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    return df
 
 def update_faena(faena_id, name, supervisor):
-    data = {"name": name, "supervisor": supervisor}
-    supabase.table("faenas").update(data).eq("id", faena_id).execute()
+    update_row_by_id("faenas", faena_id, {"name": name, "supervisor": supervisor})
 
 def delete_faena(faena_id):
-    # Unlink expenses first to preserve financial record but remove faena tag
-    # or Delete them? User deleted project implies deleting expenses, but deleting only Faena 
-    # usually means just removing the operational front. We'll set to NULL to keep the expense in the project.
-    try:
-        supabase.table("expenses").update({"faena_id": None}).eq("faena_id", faena_id).execute()
-        supabase.table("faenas").delete().eq("id", faena_id).execute()
-        return True
-    except Exception as e:
-        print(f"Error deleting faena: {e}")
-        return False
+    df = read_worksheet("expenses")
+    if not df.empty and 'faena_id' in df.columns:
+        df['faena_id'] = pd.to_numeric(df['faena_id'], errors='coerce')
+        df.loc[df['faena_id'] == int(faena_id), 'faena_id'] = None
+        write_worksheet("expenses", df)
+    delete_row_by_id("faenas", faena_id)
+    return True
 
-# Units
-def add_unit(name, type, details):
-    data = {
-        "name": name,
-        "type": type,
-        "details": details
-    }
-    supabase.table("units").insert(data).execute()
+# --- Units ---
+def add_unit(name, type_, details):
+    new_id = get_next_id("units")
+    append_row("units", {"id": new_id, "name": name, "type": type_, "details": details})
 
 def get_units():
-    response = supabase.table("units").select("*").execute()
-    return pd.DataFrame(response.data)
+    return read_worksheet("units", ['id', 'name', 'type', 'details'])
 
-def update_unit(unit_id, name, type, details):
-    data = {
-        "name": name,
-        "type": type,
-        "details": details
-    }
-    supabase.table("units").update(data).eq("id", unit_id).execute()
+def update_unit(unit_id, name, type_, details):
+    update_row_by_id("units", unit_id, {"name": name, "type": type_, "details": details})
 
 def delete_unit(unit_id):
-    supabase.table("units").delete().eq("id", unit_id).execute()
+    delete_row_by_id("units", unit_id)
 
-# Expenses
+# --- Expenses ---
 def add_expense(date, project_id, faena_id, unit_id, category, amount, description):
-    data = {
-        "date": str(date),
-        "project_id": project_id,
-        "faena_id": faena_id,
-        "unit_id": unit_id,
-        "category": category,
-        "amount": amount,
-        "description": description
-    }
-    supabase.table("expenses").insert(data).execute()
+    new_id = get_next_id("expenses")
+    append_row("expenses", {
+        "id": new_id, "date": str(date), "project_id": project_id,
+        "faena_id": faena_id, "unit_id": unit_id,
+        "category": category, "amount": amount, "description": description
+    })
 
-@retry_db
 def get_expenses_df(project_id=None):
-    # Supabase join syntax is: "col, relation(col)"
-    query = supabase.table("expenses").select(
-        "id, date, amount, category, description, project_id, project:projects(name), faena:faenas(name), unit:units(name)"
-    ).order("date", desc=True)
-    
-    if project_id:
-        query = query.eq("project_id", project_id)
-        
-    response = query.execute()
-    data = response.data
-    
-    # Flatten JSON structure for DataFrame
-    flat_data = []
-    for row in data:
-        new_row = row.copy()
-        new_row['project'] = row['project']['name'] if row.get('project') else None
-        new_row['faena'] = row['faena']['name'] if row.get('faena') else None
-        new_row['unit'] = row['unit']['name'] if row.get('unit') else None
-        flat_data.append(new_row)
-        
-    if not flat_data:
+    df = read_worksheet("expenses", [
+        'id', 'date', 'amount', 'category', 'description',
+        'project_id', 'project', 'faena', 'unit'
+    ])
+    if df.empty:
         return pd.DataFrame(columns=[
-            'id', 'date', 'amount', 'category', 'description', 
+            'id', 'date', 'amount', 'category', 'description',
             'project_id', 'project', 'faena', 'unit'
         ])
-        
-    return pd.DataFrame(flat_data)
 
-@retry_db
+    for col in ['amount', 'project_id', 'faena_id', 'unit_id']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Join project/faena/unit names
+    projects_df = get_projects()
+    faenas_df = get_faenas()
+    units_df = get_units()
+
+    if 'project_id' in df.columns and not projects_df.empty:
+        proj_map = projects_df.set_index('id')['name'].to_dict()
+        df['project'] = df['project_id'].map(proj_map).fillna(df.get('project', ''))
+
+    if 'faena_id' in df.columns and not faenas_df.empty:
+        faena_map = faenas_df.set_index('id')['name'].to_dict()
+        df['faena'] = df['faena_id'].map(faena_map).fillna(df.get('faena', ''))
+
+    if 'unit_id' in df.columns and not units_df.empty:
+        unit_map = units_df.set_index('id')['name'].to_dict()
+        df['unit'] = df['unit_id'].map(unit_map).fillna(df.get('unit', ''))
+
+    if project_id is not None:
+        df = df[df['project_id'] == int(project_id)]
+
+    if 'date' in df.columns:
+        df = df.sort_values('date', ascending=False)
+
+    return df
+
+# --- KPIs ---
 def get_kpis():
-    # --- 1. Finance ---
     projs = get_projects()
     total_budget = projs['budget_total'].sum() if not projs.empty else 0
-    
-    # Calculate Total Spent using Purchase Orders (OC) for consistency
-    po_res = supabase.table("purchase_orders").select("total_amount, status").execute()
-    po_df = pd.DataFrame(po_res.data)
-    if not po_df.empty:
-        # Filter out Rejected
+
+    po_df = read_worksheet("purchase_orders")
+    if not po_df.empty and 'total_amount' in po_df.columns:
+        po_df['total_amount'] = pd.to_numeric(po_df['total_amount'], errors='coerce')
         total_spent = po_df[po_df['status'] != 'Rechazada']['total_amount'].sum()
-        # User Feedback: "Pending Orders" shows $0 but they expect value.
-        # Interpreting "Pending" as "Pending Payment/Finalization" (Pendiente + Aprobada).
         pending_po_amount = po_df[po_df['status'].isin(['Pendiente', 'Aprobada'])]['total_amount'].sum()
     else:
         total_spent = 0
         pending_po_amount = 0
 
-    # --- 2. Lean (Global Average PPC) ---
-    # Fetch all tasks to calc global PPC (Week-based approximation)
-    tasks_res = supabase.table("tasks").select("status").execute()
-    tasks_df = pd.DataFrame(tasks_res.data)
-    if not tasks_df.empty:
+    tasks_df = read_worksheet("tasks")
+    if not tasks_df.empty and 'status' in tasks_df.columns:
         total_tasks = len(tasks_df)
         completed_tasks = len(tasks_df[tasks_df['status'] == 'Completado'])
         global_ppc = int((completed_tasks / total_tasks) * 100) if total_tasks > 0 else 0
     else:
         global_ppc = 0
 
-    # --- 3. Compliance (Subcontractors) ---
-    subs_res = supabase.table("subcontractors").select("status").execute()
-    subs_df = pd.DataFrame(subs_res.data)
-    active_subs = len(subs_df[subs_df['status'] == 'Activo']) if not subs_df.empty else 0
-    total_subs = len(subs_df) if not subs_df.empty else 0
+    subs_df = read_worksheet("subcontractors")
+    if not subs_df.empty and 'status' in subs_df.columns:
+        active_subs = len(subs_df[subs_df['status'] == 'Activo'])
+        total_subs = len(subs_df)
+    else:
+        active_subs = 0
+        total_subs = 0
 
-    # --- 4. Tenders (Open) ---
-    tenders_res = supabase.table("tenders").select("status").eq("status", "Publicada").execute()
-    open_tenders = len(tenders_res.data)
+    tenders_df = read_worksheet("tenders")
+    if not tenders_df.empty and 'status' in tenders_df.columns:
+        open_tenders = len(tenders_df[tenders_df['status'] == 'Publicada'])
+    else:
+        open_tenders = 0
 
     return {
         "total_spent": total_spent,
@@ -368,706 +383,642 @@ def get_kpis():
         "open_tenders": open_tenders
     }
 
-@retry_db
 def get_dashboard_alerts():
     alerts = []
-    
-    # 1. Pending Purchase Orders (Approvals)
-    pending_pos_res = supabase.table("purchase_orders").select("id, order_number, provider_name, total_amount").eq("status", "Pendiente").execute()
-    for po in pending_pos_res.data:
-        identifier = po.get('order_number') or po['id']
-        alerts.append({
-            "scope": "Finanzas",
-            "message": f"OC #{identifier} pendiente de aprobación",
-            "detail": f"Proveedor: {po['provider_name']} - ${po['total_amount']:,.0f}",
-            "severity": "warning"
-        })
-        
-    # 2. Expiring/Expired Documents (Compliance)
-    # Simple check on all docs, ideally filtered by date. Fetching all for now as dataset is small-ish
-    docs_res = supabase.table("compliance_documents").select("document_type, expiration_date, subcontractor:subcontractors(name)").execute()
-    today = datetime.now().date()
-    for doc in docs_res.data:
-        if doc['expiration_date']:
-            exp_date = datetime.strptime(doc['expiration_date'], '%Y-%m-%d').date()
-            days_left = (exp_date - today).days
-            
-            sub_name = doc['subcontractor']['name'] if doc.get('subcontractor') else "Desconocido"
-            
-            if days_left < 0:
-                alerts.append({
-                    "scope": "Subcontratos",
-                    "message": f"Documento Vencido: {sub_name}",
-                    "detail": f"{doc['document_type']} venció el {exp_date}",
-                    "severity": "error"
-                })
-            elif days_left <= 7:
-                 alerts.append({
-                    "scope": "Subcontratos",
-                    "message": f"Por Vencer: {sub_name}",
-                    "detail": f"{doc['document_type']} vence en {days_left} días",
-                    "severity": "warning"
-                })
 
-    # 3. Budget Overrun (Simple check: Spent > Budget per project)
-    # Requires fetching both. We reuse get_kpis logic partly
-    projs = get_projects()
-    for _, prow in projs.iterrows():
-         # Get expenses for this project
-         # This is expensive in loop, but OK for small app. Optimization: aggregate in SQL/KPIs function
-         # We'll skip complex one for now or do a quick check if we had expense metrics
-         pass 
+    po_df = read_worksheet("purchase_orders")
+    if not po_df.empty and 'status' in po_df.columns:
+        pending = po_df[po_df['status'] == 'Pendiente']
+        for _, po in pending.iterrows():
+            identifier = po.get('order_number') or po.get('id', '')
+            alerts.append({
+                "scope": "Finanzas",
+                "message": f"OC #{identifier} pendiente de aprobación",
+                "detail": f"Proveedor: {po.get('provider_name', '')} - ${po.get('total_amount', 0):,.0f}",
+                "severity": "warning"
+            })
+
+    docs_df = read_worksheet("compliance_documents")
+    if not docs_df.empty:
+        today = datetime.now().date()
+        subs_df = read_worksheet("subcontractors")
+        sub_map = subs_df.set_index('id')['name'].to_dict() if not subs_df.empty else {}
+        for _, doc in docs_df.iterrows():
+            if doc.get('expiration_date'):
+                try:
+                    exp_date = datetime.strptime(doc['expiration_date'], '%Y-%m-%d').date()
+                    days_left = (exp_date - today).days
+                    sub_name = sub_map.get(int(doc.get('subcontractor_id', 0)), "Desconocido")
+                    if days_left < 0:
+                        alerts.append({
+                            "scope": "Subcontratos",
+                            "message": f"Documento Vencido: {sub_name}",
+                            "detail": f"{doc['document_type']} venció el {exp_date}",
+                            "severity": "error"
+                        })
+                    elif days_left <= 7:
+                        alerts.append({
+                            "scope": "Subcontratos",
+                            "message": f"Por Vencer: {sub_name}",
+                            "detail": f"{doc['document_type']} vence en {days_left} días",
+                            "severity": "warning"
+                        })
+                except:
+                    pass
 
     return alerts
 
 def get_recent_expenses(limit=5):
-    # Select relations 
-    response = supabase.table("expenses").select("date,description,category,amount").order("date", desc=True).limit(limit).execute()
-    df = pd.DataFrame(response.data)
+    df = read_worksheet("expenses", ['date', 'description', 'category', 'amount'])
     if df.empty:
         return pd.DataFrame(columns=['date', 'description', 'category', 'amount'])
-    return df
+    if 'date' in df.columns:
+        df = df.sort_values('date', ascending=False)
+    return df.head(limit)
 
-# --- Generic Helper to replace old run_query for complex selects ---
+# --- Legacy run_query ---
 def run_query(query_str, params=None, return_df=True):
-    """
-    DEPRECATED: Compatibility layer. 
-    It is extremely hard to parse generic SQL to Supabase API calls.
-    We will now log a warning and try to return empty or handle specific known queries.
-    """
     print(f"WARNING: RAW SQL ATTEMPTED: {query_str}")
-    
-    # Naive handlers for specific known queries used in other modules
-    # 1. Users login
+
     if "SELECT * FROM users WHERE username" in query_str:
         user = params[0]
-        res = supabase.table("users").select("*").eq("username", user).execute()
-        return pd.DataFrame(res.data)
-    
-    # 2. Insert User (Auth)
+        df = read_worksheet("users")
+        if not df.empty and 'username' in df.columns:
+            return df[df['username'] == user]
+        return pd.DataFrame()
+
     if "INSERT INTO users" in query_str:
-        # Params: username, password_hash, full_name, role
-        # We need to extract them from params, usually passed as tuple
         data = {
-            "username": params[0],
-            "password_hash": params[1],
-            "full_name": params[2],
-            "role": params[3]
+            "username": params[0], "password_hash": params[1],
+            "full_name": params[2], "role": params[3]
         }
-        supabase.table("users").insert(data).execute()
+        data['id'] = get_next_id("users")
+        append_row("users", data)
         return True
 
-    # 3. Teams / Project Assignments
-    # We'll need to refactor teams.py likely, but let's try
     if "SELECT * FROM project_assignments" in query_str:
-         res = supabase.table("project_assignments").select("*").execute()
-         return pd.DataFrame(res.data)
+        return read_worksheet("project_assignments")
 
-    # Fallback for simple selects
     if query_str.startswith("SELECT * FROM"):
-        # Extract table name
         parts = query_str.split()
         if len(parts) >= 4:
-             table = parts[3]
-             res = supabase.table(table).select("*").execute()
-             return pd.DataFrame(res.data)
+            table = parts[3]
+            return read_worksheet(table)
 
-    return pd.DataFrame() # Return empty to avoid crash
+    return pd.DataFrame()
 
-# --- Auth & Users Support ---
+# --- Users & Auth ---
 def get_user_by_username(username):
-    response = supabase.table("users").select("*").eq("username", username).execute()
-    return pd.DataFrame(response.data)
+    df = read_worksheet("users")
+    if df.empty or 'username' not in df.columns:
+        return pd.DataFrame()
+    return df[df['username'] == username]
 
 def create_user_record(username, password_hash, full_name, role, email=None):
-    data = {
-        "username": username,
-        "password_hash": password_hash,
-        "full_name": full_name,
-        "role": role,
-        "email": email
-    }
-    supabase.table("users").insert(data).execute()
+    new_id = get_next_id("users")
+    append_row("users", {
+        "id": new_id, "username": username, "password_hash": password_hash,
+        "full_name": full_name, "role": role, "email": email
+    })
 
-# --- Teams / Utils ---
 def get_all_users():
     try:
-        response = supabase.table("users").select("id, full_name, role, username, email").execute()
-        return pd.DataFrame(response.data)
+        df = read_worksheet("users")
+        if df.empty or 'id' not in df.columns:
+            return pd.DataFrame(columns=['id', 'full_name', 'role', 'username', 'email'])
+        cols = [c for c in ['id', 'full_name', 'role', 'username', 'email'] if c in df.columns]
+        return df[cols]
     except Exception as e:
-        # Fallback if email column missing (SQL not run yet)
-        response = supabase.table("users").select("id, full_name, role, username").execute()
-        df = pd.DataFrame(response.data)
-        if not df.empty:
-            df['email'] = None
-        return df
+        print(f"Error get_all_users: {e}")
+        return pd.DataFrame(columns=['id', 'full_name', 'role', 'username', 'email'])
 
 def get_users_full():
-    response = supabase.table("users").select("*").order("id").execute()
-    return pd.DataFrame(response.data)
+    return read_worksheet("users")
 
 def update_user(user_id, username, full_name, role, password_hash=None, email=None):
     data = {"username": username, "full_name": full_name, "role": role, "email": email}
     if password_hash:
         data["password_hash"] = password_hash
-    supabase.table("users").update(data).eq("id", user_id).execute()
+    update_row_by_id("users", user_id, data)
 
 def delete_user(user_id):
-    supabase.table("users").delete().eq("id", user_id).execute()
+    delete_row_by_id("users", user_id)
 
-# --- Roles Management ---
+# --- Roles ---
 def get_roles():
     try:
-        response = supabase.table("roles").select("*").order("id").execute()
-        return pd.DataFrame(response.data)
-    except Exception:
-        # Fallback if table doesn't exist yet
-        return pd.DataFrame({
-            'id': range(1, 7),
-            'name': ["Programador", "Administrador", "Residente de Obra", "Capataz", "Bodeguero", "Prevencionista"],
-            'description': ["Acceso Total", "Gestión", "Proyectos", "Cuadrillas", "Recursos", "Seguridad"]
-        })
+        df = read_worksheet("roles")
+        if not df.empty and 'id' in df.columns:
+            return df
+    except:
+        pass
+    return pd.DataFrame({
+        'id': range(1, 7),
+        'name': ["Programador", "Administrador", "Residente de Obra", "Capataz", "Bodeguero", "Prevencionista"],
+        'description': ["Acceso Total", "Gestión", "Proyectos", "Cuadrillas", "Recursos", "Seguridad"]
+    })
 
 def add_role(name, description=""):
-    data = {"name": name, "description": description}
-    supabase.table("roles").insert(data).execute()
+    new_id = get_next_id("roles")
+    append_row("roles", {"id": new_id, "name": name, "description": description})
 
 def delete_role(role_id):
-    supabase.table("roles").delete().eq("id", role_id).execute()
+    delete_row_by_id("roles", role_id)
 
+# --- Project Assignments ---
 def get_project_assignments(project_id):
-    # Join with users to get names
-    # select *, users(full_name)
-    response = supabase.table("project_assignments").select("id, role, assigned_at, user:users(full_name)").eq("project_id", project_id).execute()
-    data = response.data
-    flat = []
-    for row in data:
-         new = row.copy()
-         new['full_name'] = row['user']['full_name'] if row.get('user') else 'Unknown'
-         flat.append(new)
-    return pd.DataFrame(flat)
+    df = read_worksheet("project_assignments")
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'role', 'assigned_at', 'full_name'])
+    if 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    users_df = get_all_users()
+    if not users_df.empty and 'user_id' in df.columns and 'id' in users_df.columns:
+        user_map = users_df.set_index('id')['full_name'].to_dict()
+        df['full_name'] = df['user_id'].map(user_map).fillna('Unknown')
+    return df
 
 def get_all_project_assignments():
-    response = supabase.table("project_assignments").select("id, role, assigned_at, user:users(full_name, username), project:projects(name)").execute()
-    data = response.data
-    flat = []
-    for row in data:
-         user_data = row.get('user') or {}
-         new = {
-             'id': row['id'],
-             'role': row['role'],
-             'assigned_at': row['assigned_at'],
-             'full_name': user_data.get('full_name', 'Unknown'),
-             'username': user_data.get('username', ''),
-             'project_name': row['project']['name'] if row.get('project') else 'Unknown'
-         }
-         flat.append(new)
-    return pd.DataFrame(flat)
+    df = read_worksheet("project_assignments")
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'role', 'assigned_at', 'full_name', 'username', 'project_name'])
+    users_df = get_all_users()
+    projects_df = get_projects()
+    if not users_df.empty and 'user_id' in df.columns:
+        user_map = users_df.set_index('id')[['full_name', 'username']].to_dict('index')
+        df['full_name'] = df['user_id'].map(lambda x: user_map.get(int(x), {}).get('full_name', 'Unknown') if pd.notna(x) else 'Unknown')
+        df['username'] = df['user_id'].map(lambda x: user_map.get(int(x), {}).get('username', '') if pd.notna(x) else '')
+    if not projects_df.empty and 'project_id' in df.columns:
+        proj_map = projects_df.set_index('id')['name'].to_dict()
+        df['project_name'] = df['project_id'].map(proj_map).fillna('Unknown')
+    return df
 
 def assign_user_to_project(project_id, user_id, role, assigned_at=None):
-    data = {"project_id": project_id, "user_id": user_id, "role": role}
-    if assigned_at:
-        data['assigned_at'] = str(assigned_at)
-        
-    # Check if exists (Upsert logic or Check then insert)
-    # Supabase upsert: Need unique constraint on project_id, user_id
-    # Or just select first
-    existing = supabase.table("project_assignments").select("id").eq("project_id", project_id).eq("user_id", user_id).execute()
-    if existing.data:
-         # Update
-         update_payload = {"role": role}
-         if assigned_at:
-             update_payload['assigned_at'] = str(assigned_at)
-         supabase.table("project_assignments").update(update_payload).eq("id", existing.data[0]['id']).execute()
-    else:
-         supabase.table("project_assignments").insert(data).execute()
+    df = get_all_project_assignments()
+    if not df.empty:
+        match = df[(df['project_id'] == int(project_id)) & (df['user_id'] == int(user_id))]
+        if not match.empty:
+            update_row_by_id("project_assignments", match.iloc[0]['id'], {"role": role})
+            return
+    new_id = get_next_id("project_assignments")
+    append_row("project_assignments", {
+        "id": new_id, "project_id": project_id, "user_id": user_id,
+        "role": role, "assigned_at": str(assigned_at or datetime.now())
+    })
 
 def remove_project_assignment(assignment_id):
-    supabase.table("project_assignments").delete().eq("id", assignment_id).execute()
+    delete_row_by_id("project_assignments", assignment_id)
 
 # --- Budget ---
 def get_budget_items(project_id):
-    response = supabase.table("budget_items").select("*").eq("project_id", project_id).execute()
-    return pd.DataFrame(response.data)
+    df = read_worksheet("budget_items")
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'project_id', 'item_name', 'category', 'estimated_amount'])
+    if 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    return df
 
 def create_budget_item(project_id, name, category, amount):
-    data = {
-        "project_id": project_id,
-        "item_name": name,
-        "category": category,
-        "estimated_amount": amount
-    }
-    supabase.table("budget_items").insert(data).execute()
+    new_id = get_next_id("budget_items")
+    append_row("budget_items", {
+        "id": new_id, "project_id": project_id,
+        "item_name": name, "category": category, "estimated_amount": amount
+    })
 
 def update_budget_item(item_id, name, category, amount):
-    supabase.table("budget_items").update({
-        "item_name": name,
-        "category": category,
-        "estimated_amount": amount
-    }).eq("id", item_id).execute()
+    update_row_by_id("budget_items", item_id, {
+        "item_name": name, "category": category, "estimated_amount": amount
+    })
 
 def delete_budget_item(item_id):
-    supabase.table("budget_items").delete().eq("id", item_id).execute()
+    delete_row_by_id("budget_items", item_id)
 
 def get_all_budget_items():
-    """Fetches all budget items for all projects."""
-    response = supabase.table("budget_items").select("*").execute()
-    return pd.DataFrame(response.data)
+    return read_worksheet("budget_items")
 
-# --- Finance Support ---
+# --- Purchase Orders ---
 def create_purchase_order(project_id, provider_name, date, total_amount, order_number, description="", category="Otros"):
-    data = {
-        "project_id": int(project_id), 
-        "provider_name": provider_name, 
-        "date": str(date), 
-        "total_amount": float(total_amount), 
-        "description": description,
-        "category": category,
-        "status": 'Pagada',
-        "order_number": order_number
-    }
-    supabase.table("purchase_orders").insert(data).execute()
+    new_id = get_next_id("purchase_orders")
+    append_row("purchase_orders", {
+        "id": new_id, "project_id": int(project_id), "provider_name": provider_name,
+        "date": str(date), "total_amount": float(total_amount),
+        "description": description, "category": category,
+        "status": "Pagada", "order_number": order_number
+    })
 
 def get_purchase_orders(project_id=None):
-    # Select with project name
-    query = supabase.table("purchase_orders").select("*, projects(name)").order("date", desc=True)
-    if project_id:
-        query = query.eq("project_id", project_id)
-    response = query.execute()
-    
-    data = response.data
-    # Flatten
-    for row in data:
-        if row.get('projects'):
-            row['project_name'] = row['projects']['name']
-        else:
-            row['project_name'] = 'N/A'
-            
-    return pd.DataFrame(data)
+    df = read_worksheet("purchase_orders")
+    if df.empty:
+        return pd.DataFrame(columns=[
+            'id', 'project_id', 'provider_name', 'date', 'total_amount',
+            'description', 'status', 'order_number', 'category', 'project_name'
+        ])
+    for col in ['total_amount', 'project_id']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    projects_df = get_projects()
+    if not projects_df.empty:
+        proj_map = projects_df.set_index('id')['name'].to_dict()
+        df['project_name'] = df['project_id'].map(proj_map).fillna('Sin Proyecto')
+
+    if project_id is not None:
+        df = df[df['project_id'] == int(project_id)]
+
+    if 'date' in df.columns:
+        df = df.sort_values('date', ascending=False)
+    return df
 
 def update_purchase_order_full(po_id, project_id, provider, amount, date, order_number, desc, category="Otros"):
-     supabase.table("purchase_orders").update({
-         "project_id": project_id,
-         "provider_name": provider,
-         "total_amount": amount,
-         "date": str(date),
-         "order_number": order_number,
-         "description": desc,
-         "category": category
-     }).eq("id", po_id).execute()
+    update_row_by_id("purchase_orders", po_id, {
+        "project_id": project_id, "provider_name": provider,
+        "total_amount": amount, "date": str(date),
+        "order_number": order_number, "description": desc, "category": category
+    })
 
 def update_po_status(po_id, status):
-    supabase.table("purchase_orders").update({"status": status}).eq("id", po_id).execute()
-
+    update_row_by_id("purchase_orders", po_id, {"status": status})
 
 def delete_purchase_order(po_id):
-    supabase.table("purchase_orders").delete().eq("id", po_id).execute()
+    delete_row_by_id("purchase_orders", po_id)
 
-# --- Compliance (Subcontractors) ---
-@retry_db
+# --- Subcontractors ---
 def get_subcontractors(project_id=None):
-    query = supabase.table("subcontractors").select("*")
-    if project_id:
-        query = query.eq("project_id", project_id)
-    response = query.execute()
-    df = pd.DataFrame(response.data)
+    df = read_worksheet("subcontractors", [
+        'id', 'project_id', 'name', 'rut', 'contact_email',
+        'contact_phone', 'specialty', 'representative', 'monto_asignado', 'status'
+    ])
     if df.empty:
         return pd.DataFrame(columns=['id', 'project_id', 'name', 'rut', 'contact_email', 'contact_phone', 'specialty', 'representative', 'monto_asignado', 'status'])
+    if project_id is not None and 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    if 'monto_asignado' in df.columns:
+        df['monto_asignado'] = pd.to_numeric(df['monto_asignado'], errors='coerce')
     return df
 
 def create_subcontractor(project_id, name, rut, email, phone, specialty, rep, monto_asignado=0):
-    data = {
-        "project_id": project_id,
-        "name": name, 
-        "rut": rut, 
-        "contact_email": email,
-        "contact_phone": phone,
-        "specialty": specialty,
-        "representative": rep,
-        "monto_asignado": monto_asignado,
-        "status": "Activo"
-    }
-    supabase.table("subcontractors").insert(data).execute()
+    new_id = get_next_id("subcontractors")
+    append_row("subcontractors", {
+        "id": new_id, "project_id": project_id, "name": name, "rut": rut,
+        "contact_email": email, "contact_phone": phone, "specialty": specialty,
+        "representative": rep, "monto_asignado": monto_asignado, "status": "Activo"
+    })
 
 def update_subcontractor_full(sub_id, name, rut, email, phone, specialty, rep, monto_asignado=None):
-    payload = {
-        "name": name, 
-        "rut": rut, 
-        "contact_email": email,
-        "contact_phone": phone,
-        "specialty": specialty,
-        "representative": rep
-    }
+    data = {"name": name, "rut": rut, "contact_email": email,
+            "contact_phone": phone, "specialty": specialty, "representative": rep}
     if monto_asignado is not None:
-        payload["monto_asignado"] = monto_asignado
-        
-    supabase.table("subcontractors").update(payload).eq("id", sub_id).execute()
+        data["monto_asignado"] = monto_asignado
+    update_row_by_id("subcontractors", sub_id, data)
 
 def update_sub_status(sub_id, status):
-    supabase.table("subcontractors").update({"status": status}).eq("id", sub_id).execute()
+    update_row_by_id("subcontractors", sub_id, {"status": status})
 
 def delete_subcontractor(sub_id):
-    supabase.table("subcontractors").delete().eq("id", sub_id).execute()
+    delete_row_by_id("subcontractors", sub_id)
 
 # --- Compliance Documents ---
-@retry_db
 def get_compliance_documents(sub_id):
-    response = supabase.table("compliance_documents").select("*").eq("subcontractor_id", sub_id).order("last_updated", desc=True).execute()
-    df = pd.DataFrame(response.data)
+    df = read_worksheet("compliance_documents", [
+        'id', 'subcontractor_id', 'document_type', 'status', 'expiration_date', 'last_updated'
+    ])
     if df.empty:
         return pd.DataFrame(columns=['id', 'subcontractor_id', 'document_type', 'status', 'expiration_date', 'last_updated'])
+    if 'subcontractor_id' in df.columns:
+        df['subcontractor_id'] = pd.to_numeric(df['subcontractor_id'], errors='coerce')
+        df = df[df['subcontractor_id'] == int(sub_id)]
     return df
 
 def create_compliance_document(sub_id, doc_type, status, expiration):
-    data = {
-        "subcontractor_id": sub_id,
-        "document_type": doc_type,
-        "status": status,
+    new_id = get_next_id("compliance_documents")
+    append_row("compliance_documents", {
+        "id": new_id, "subcontractor_id": sub_id,
+        "document_type": doc_type, "status": status,
         "expiration_date": str(expiration)
-    }
-    supabase.table("compliance_documents").insert(data).execute()
+    })
 
 def delete_compliance_document(doc_id):
-    supabase.table("compliance_documents").delete().eq("id", doc_id).execute()
+    delete_row_by_id("compliance_documents", doc_id)
 
 # --- Quality ---
-@retry_db
 def get_quality_logs(project_id=None):
-    query = supabase.table("quality_logs").select("*").order("date", desc=True)
-    if project_id:
-        query = query.eq("project_id", project_id)
-    response = query.execute()
-    df = pd.DataFrame(response.data)
+    df = read_worksheet("quality_logs", [
+        'id', 'project_id', 'title', 'description', 'inspector_name', 'signer_name', 'date'
+    ])
     if df.empty:
         return pd.DataFrame(columns=['id', 'project_id', 'title', 'description', 'inspector_name', 'signer_name', 'date'])
+    if project_id is not None and 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    if 'date' in df.columns:
+        df = df.sort_values('date', ascending=False)
     return df
 
 def create_quality_log(project_id, title, description, inspector, signer_name):
-    data = {
-        "project_id": project_id, 
-        "title": title, 
-        "description": description, 
-        "inspector_name": inspector,
+    new_id = get_next_id("quality_logs")
+    append_row("quality_logs", {
+        "id": new_id, "project_id": project_id, "title": title,
+        "description": description, "inspector_name": inspector,
         "signer_name": signer_name
-    }
-    supabase.table("quality_logs").insert(data).execute()
+    })
 
 def update_quality_log(log_id, title, description, inspector, signer_name):
-    supabase.table("quality_logs").update({
-        "title": title, 
-        "description": description, 
-        "inspector_name": inspector,
-        "signer_name": signer_name
-    }).eq("id", log_id).execute()
+    update_row_by_id("quality_logs", log_id, {
+        "title": title, "description": description,
+        "inspector_name": inspector, "signer_name": signer_name
+    })
 
 def delete_quality_log(log_id):
-    supabase.table("quality_logs").delete().eq("id", log_id).execute()
+    delete_row_by_id("quality_logs", log_id)
 
 # --- Lab Tests ---
-@retry_db
 def get_lab_tests(project_id=None):
-    query = supabase.table("lab_tests").select("*").order("test_date", desc=True)
-    if project_id:
-        query = query.eq("project_id", project_id)
-    response = query.execute()
-    df = pd.DataFrame(response.data)
+    df = read_worksheet("lab_tests", ['id', 'project_id', 'test_type', 'test_date', 'result', 'observation'])
     if df.empty:
         return pd.DataFrame(columns=['id', 'project_id', 'test_type', 'test_date', 'result', 'observation'])
+    if project_id is not None and 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    if 'test_date' in df.columns:
+        df = df.sort_values('test_date', ascending=False)
     return df
 
 def create_lab_test(project_id, test_type, date, result, obs):
-    data = {
-        "project_id": project_id,
-        "test_type": test_type,
-        "test_date": str(date),
-        "result": result,
-        "observation": obs
-    }
-    supabase.table("lab_tests").insert(data).execute()
+    new_id = get_next_id("lab_tests")
+    append_row("lab_tests", {
+        "id": new_id, "project_id": project_id, "test_type": test_type,
+        "test_date": str(date), "result": result, "observation": obs
+    })
 
 def update_lab_test(test_id, test_type, date, result, obs):
-    supabase.table("lab_tests").update({
-        "test_type": test_type,
-        "test_date": str(date),
-        "result": result,
-        "observation": obs
-    }).eq("id", test_id).execute()
+    update_row_by_id("lab_tests", test_id, {
+        "test_type": test_type, "test_date": str(date),
+        "result": result, "observation": obs
+    })
 
 def delete_lab_test(test_id):
-    supabase.table("lab_tests").delete().eq("id", test_id).execute()
+    delete_row_by_id("lab_tests", test_id)
 
-# --- Lean (Tasks) ---
-@retry_db
+# --- Tasks (Lean) ---
 def get_tasks(project_id=None):
-    query = supabase.table("tasks").select("*").order("start_date")
-    if project_id:
-        query = query.eq("project_id", project_id)
-    response = query.execute()
-    df = pd.DataFrame(response.data)
+    df = read_worksheet("tasks", [
+        'id', 'project_id', 'name', 'start_date', 'end_date', 'status', 'type', 'tags'
+    ])
     if df.empty:
         return pd.DataFrame(columns=['id', 'project_id', 'name', 'start_date', 'end_date', 'status'])
+    if project_id is not None and 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    if 'start_date' in df.columns:
+        df = df.sort_values('start_date')
     return df
 
 def create_task(project_id, name, start, end, status="Por Hacer"):
-    data = {
-        "project_id": project_id, 
-        "name": name, 
-        "start_date": str(start), 
-        "end_date": str(end), 
-        "status": status
-    }
-    supabase.table("tasks").insert(data).execute()
+    new_id = get_next_id("tasks")
+    append_row("tasks", {
+        "id": new_id, "project_id": project_id, "name": name,
+        "start_date": str(start), "end_date": str(end), "status": status
+    })
 
 def update_task_status(task_id, new_status):
-    supabase.table("tasks").update({"status": new_status}).eq("id", task_id).execute()
+    update_row_by_id("tasks", task_id, {"status": new_status})
 
 def update_task_details(task_id, name):
-    supabase.table("tasks").update({"name": name}).eq("id", task_id).execute()
+    update_row_by_id("tasks", task_id, {"name": name})
 
 def delete_task(task_id):
-    supabase.table("tasks").delete().eq("id", task_id).execute()
+    delete_row_by_id("tasks", task_id)
 
 # --- Tenders ---
 def create_tender(project_id, title, estimated_budget, tender_type, utm_value, status, ssd_code, mercado_publico_id=""):
-    data = {
-         "project_id": project_id, "title": title, "type": tender_type, 
-         "budget_estimated": estimated_budget, "utm_value_at_creation": utm_value,
-         "status": status, "ssd_code": ssd_code, "mercado_publico_id": mercado_publico_id
-    }
-    supabase.table("tenders").insert(data).execute()
+    new_id = get_next_id("tenders")
+    append_row("tenders", {
+        "id": new_id, "project_id": project_id, "title": title,
+        "type": tender_type, "budget_estimated": estimated_budget,
+        "utm_value_at_creation": utm_value, "status": status,
+        "ssd_code": ssd_code, "mercado_publico_id": mercado_publico_id
+    })
 
-@retry_db
 def get_tenders(project_id=None):
-    query = supabase.table("tenders").select("*")
-    if project_id:
-        query = query.eq("project_id", project_id)
-    response = query.execute()
-    df = pd.DataFrame(response.data)
+    df = read_worksheet("tenders", [
+        'id', 'project_id', 'title', 'type', 'budget_estimated',
+        'utm_value_at_creation', 'status', 'ssd_code', 'mercado_publico_id'
+    ])
     if df.empty:
         return pd.DataFrame(columns=[
-            'id', 'project_id', 'title', 'type', 'budget_estimated', 
+            'id', 'project_id', 'title', 'type', 'budget_estimated',
             'utm_value_at_creation', 'status', 'ssd_code', 'mercado_publico_id'
         ])
+    if project_id is not None and 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
     return df
 
 def update_tender_status(tender_id, new_status):
-    supabase.table("tenders").update({"status": new_status}).eq("id", tender_id).execute()
+    update_row_by_id("tenders", tender_id, {"status": new_status})
 
 def update_tender(tender_id, title, budget, mercado_publico_id, tender_type):
-    supabase.table("tenders").update({
-        "title": title, 
-        "budget_estimated": budget,
-        "mercado_publico_id": mercado_publico_id,
-        "type": tender_type
-    }).eq("id", tender_id).execute()
+    update_row_by_id("tenders", tender_id, {
+        "title": title, "budget_estimated": budget,
+        "mercado_publico_id": mercado_publico_id, "type": tender_type
+    })
 
 def delete_tender(tender_id):
-    supabase.table("tenders").delete().eq("id", tender_id).execute()
+    delete_row_by_id("tenders", tender_id)
 
 # --- Contracts ---
 def create_contract(tender_id, contractor_name, rut, amount, start, end):
-    data = {
-        "tender_id": tender_id, "contractor_name": contractor_name, "rut_contractor": rut,
-        "amount": amount, "start_date": str(start), "end_date": str(end)
-    }
-    supabase.table("contracts").insert(data).execute()
+    new_id = get_next_id("contracts")
+    append_row("contracts", {
+        "id": new_id, "tender_id": tender_id, "contractor_name": contractor_name,
+        "rut_contractor": rut, "amount": amount,
+        "start_date": str(start), "end_date": str(end)
+    })
 
-@retry_db
 def get_contracts(tender_id=None):
-     query = supabase.table("contracts").select("*")
-     if tender_id:
-         query = query.eq("tender_id", tender_id)
-     res = query.execute()
-     df = pd.DataFrame(res.data)
-     if df.empty:
-         return pd.DataFrame(columns=[
-             'id', 'tender_id', 'contractor_name', 'rut_contractor', 
-             'amount', 'start_date', 'end_date', 'status'
-         ])
-     return df
+    df = read_worksheet("contracts", [
+        'id', 'tender_id', 'contractor_name', 'rut_contractor',
+        'amount', 'start_date', 'end_date', 'status'
+    ])
+    if df.empty:
+        return pd.DataFrame(columns=[
+            'id', 'tender_id', 'contractor_name', 'rut_contractor',
+            'amount', 'start_date', 'end_date', 'status'
+        ])
+    if tender_id is not None and 'tender_id' in df.columns:
+        df['tender_id'] = pd.to_numeric(df['tender_id'], errors='coerce')
+        df = df[df['tender_id'] == int(tender_id)]
+    return df
 
 def create_guarantee(contract_id, g_type, amount, expiration):
-    data = {"contract_id": contract_id, "type": g_type, "amount": amount, "expiration_date": str(expiration)}
-    supabase.table("guarantees").insert(data).execute()
+    new_id = get_next_id("guarantees")
+    append_row("guarantees", {
+        "id": new_id, "contract_id": contract_id, "type": g_type,
+        "amount": amount, "expiration_date": str(expiration)
+    })
 
 def update_guarantee(guarantee_id, g_type, amount, expiration, status):
-    data = {"type": g_type, "amount": amount, "expiration_date": str(expiration), "status": status}
-    supabase.table("guarantees").update(data).eq("id", guarantee_id).execute()
+    update_row_by_id("guarantees", guarantee_id, {
+        "type": g_type, "amount": amount,
+        "expiration_date": str(expiration), "status": status
+    })
 
 def delete_guarantee(guarantee_id):
-    supabase.table("guarantees").delete().eq("id", guarantee_id).execute()
+    delete_row_by_id("guarantees", guarantee_id)
 
 def update_contract(contract_id, contractor_name, rut, amount, start, end, status):
-    data = {
+    update_row_by_id("contracts", contract_id, {
         "contractor_name": contractor_name, "rut_contractor": rut,
-        "amount": amount, "start_date": str(start), "end_date": str(end),
-        "status": status
-    }
-    supabase.table("contracts").update(data).eq("id", contract_id).execute()
+        "amount": amount, "start_date": str(start),
+        "end_date": str(end), "status": status
+    })
 
 def delete_contract(contract_id):
-    # Cascade delete guarantees first
-    supabase.table("guarantees").delete().eq("contract_id", contract_id).execute()
-    supabase.table("contracts").delete().eq("id", contract_id).execute()
+    delete_row_by_id("guarantees", contract_id)
+    delete_row_by_id("contracts", contract_id)
 
 # --- Phases ---
-@retry_db
 def get_phases(project_id):
-    res = supabase.table("phases").select("*").eq("project_id", project_id).execute()
-    return pd.DataFrame(res.data)
+    df = read_worksheet("phases", ['id', 'project_id', 'name', 'start_date', 'end_date', 'status'])
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'project_id', 'name', 'start_date', 'end_date', 'status'])
+    if 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    return df
 
 def add_phase(project_id, name, start, end):
-    data = {"project_id": project_id, "name": name, "start_date": str(start), "end_date": str(end)}
-    supabase.table("phases").insert(data).execute()
+    new_id = get_next_id("phases")
+    append_row("phases", {
+        "id": new_id, "project_id": project_id, "name": name,
+        "start_date": str(start), "end_date": str(end)
+    })
 
 def update_phase(phase_id, name, start, end, status="Pendiente"):
-    data = {"name": name, "start_date": str(start), "end_date": str(end), "status": status}
-    supabase.table("phases").update(data).eq("id", phase_id).execute()
+    update_row_by_id("phases", phase_id, {
+        "name": name, "start_date": str(start),
+        "end_date": str(end), "status": status
+    })
 
 def delete_phase(phase_id):
-    supabase.table("phases").delete().eq("id", phase_id).execute()
+    delete_row_by_id("phases", phase_id)
 
 # --- Comments ---
-# --- Comments ---
-@retry_db
 def get_comments(project_id):
-    # Select all fields including ID and user_id for permissions
-    res = supabase.table("comments").select("id, content, timestamp, user_id, user:users(username)").eq("project_id", project_id).order("timestamp", desc=True).execute()
-    data = res.data
-    flat = []
-    for row in data:
-        new = row.copy()
-        new['username'] = row['user']['username'] if row.get('user') else 'Unknown'
-        flat.append(new)
-    return pd.DataFrame(flat)
+    df = read_worksheet("comments", ['id', 'project_id', 'user_id', 'content', 'timestamp'])
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'content', 'timestamp', 'user_id', 'username'])
+    if 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    users_df = get_all_users()
+    if not users_df.empty and 'user_id' in df.columns:
+        user_map = users_df.set_index('id')['username'].to_dict()
+        df['username'] = df['user_id'].map(user_map).fillna('Unknown')
+    if 'timestamp' in df.columns:
+        df = df.sort_values('timestamp', ascending=False)
+    return df
 
 def add_comment(project_id, user_id, content):
-    data = {"project_id": project_id, "user_id": user_id, "content": content}
-    supabase.table("comments").insert(data).execute()
+    new_id = get_next_id("comments")
+    append_row("comments", {
+        "id": new_id, "project_id": project_id, "user_id": user_id,
+        "content": content, "timestamp": str(datetime.now())
+    })
 
 def update_comment(comment_id, content):
-    supabase.table("comments").update({"content": content}).eq("id", comment_id).execute()
+    update_row_by_id("comments", comment_id, {"content": content})
 
 def delete_comment(comment_id):
-    supabase.table("comments").delete().eq("id", comment_id).execute()
+    delete_row_by_id("comments", comment_id)
 
 def get_all_comments():
-    """Fetches all comments (Bitacora) for global quality metrics."""
-    res = supabase.table("comments").select("id, project_id").execute()
-    return pd.DataFrame(res.data)
+    df = read_worksheet("comments")
+    if df.empty:
+        return pd.DataFrame(columns=['id', 'project_id'])
+    return df[['id', 'project_id']] if 'project_id' in df.columns else pd.DataFrame(columns=['id', 'project_id'])
 
 def update_project_config(project_id, status, lat, lon):
-     supabase.table("projects").update({
-         "status": status, "latitude": lat, "longitude": lon
-     }).eq("id", project_id).execute()
+    update_row_by_id("projects", project_id, {"status": status, "latitude": lat, "longitude": lon})
 
 # --- Teams & Stats ---
-@retry_db
 def get_global_team_stats():
-    # Fetch all assignments with project names
-    # Table: project_assignments (id, project_id, user_id, role)
-    # Join projects to get name
-    res = supabase.table("project_assignments").select("role, project_id, projects(name, status)").execute()
-    data = res.data
-    
-    # Filter only active projects if needed, or keeping all
-    # Let's keep Active only
-    active_data = [d for d in data if d.get('projects') and d['projects']['status'] == 'Activo']
-    
-    if not active_data:
+    df = read_worksheet("project_assignments")
+    if df.empty:
         return {
             "total_personnel": 0,
             "roles_df": pd.DataFrame(columns=['role', 'count']),
             "projects_df": pd.DataFrame(columns=['project_name', 'count'])
         }
 
-    df = pd.DataFrame(active_data)
-    df['project_name'] = df['projects'].apply(lambda x: x['name'])
-    
-    # 1. Total Personnel
-    total = len(df)
-    
-    # 2. Roles Distribution
-    roles_df = df['role'].value_counts().reset_index()
-    roles_df.columns = ['role', 'count']
-    
-    # 3. Personnel per Project
-    projs_df = df['project_name'].value_counts().reset_index()
-    projs_df.columns = ['project_name', 'count']
-    
+    projects_df = get_projects()
+    if not projects_df.empty and 'project_id' in df.columns:
+        proj_map = projects_df.set_index('id')[['name', 'status']].to_dict('index')
+        df['project_name'] = df['project_id'].map(lambda x: proj_map.get(int(x), {}).get('name', '') if pd.notna(x) else '')
+        df['project_status'] = df['project_id'].map(lambda x: proj_map.get(int(x), {}).get('status', '') if pd.notna(x) else '')
+        active_data = df[df['project_status'] == 'Activo']
+
+        if active_data.empty:
+            return {
+                "total_personnel": 0,
+                "roles_df": pd.DataFrame(columns=['role', 'count']),
+                "projects_df": pd.DataFrame(columns=['project_name', 'count'])
+            }
+
+        total = len(active_data)
+        roles_df = active_data['role'].value_counts().reset_index()
+        roles_df.columns = ['role', 'count']
+        projs_df = active_data['project_name'].value_counts().reset_index()
+        projs_df.columns = ['project_name', 'count']
+
+        return {
+            "total_personnel": total,
+            "roles_df": roles_df,
+            "projects_df": projs_df
+        }
+
     return {
-        "total_personnel": total,
-        "roles_df": roles_df,
-        "projects_df": projs_df
+        "total_personnel": 0,
+        "roles_df": pd.DataFrame(columns=['role', 'count']),
+        "projects_df": pd.DataFrame(columns=['project_name', 'count'])
     }
 
-# --- Finance (Purchase Orders) ---
-@retry_db
-def get_purchase_orders(project_id=None):
-    """Fetches all POs with Project Names."""
-    try:
-        # Join with Projects table to get names
-        query = supabase.table("purchase_orders").select("*, projects(name)").order("date", desc=True)
-        if project_id:
-             query = query.eq("project_id", project_id)
-             
-        response = query.execute()
-        if response.data:
-            df = pd.DataFrame(response.data)
-            # Flatten project name
-            if 'projects' in df.columns:
-                 df['project_name'] = df['projects'].apply(lambda x: x['name'] if x else 'Sin Proyecto')
-            else:
-                 df['project_name'] = "Desconocido"
-            return df
-        return pd.DataFrame(columns=[
-            'id', 'project_id', 'provider_name', 'date', 
-            'total_amount', 'description', 'status', 'order_number', 
-            'projects', 'project_name'
-        ])
-    except Exception as e:
-        print(f"Error fetching POs: {e}")
-        return pd.DataFrame(columns=[
-            'id', 'project_id', 'provider_name', 'date', 
-            'total_amount', 'description', 'status', 'order_number', 
-            'projects', 'project_name'
-        ])
-
-# --- Admin / Config ---
+# --- Config ---
 def get_config(key, default=None):
-    try:
-        response = supabase.table("system_config").select("value").eq("key", key).execute()
-        if response.data:
-            return response.data[0]['value']
+    df = read_worksheet("system_config")
+    if df.empty or 'key' not in df.columns:
         return default
-    except Exception as e:
-        # print(f"Error getting config {key}: {e}") # Silent fail default
+    row = df[df['key'] == key]
+    if row.empty:
         return default
+    return row.iloc[0].get('value', default)
 
 def set_config(key, value):
-    try:
-        data = {"key": key, "value": str(value)}
-        supabase.table("system_config").upsert(data).execute()
+    df = read_worksheet("system_config")
+    if df.empty or 'key' not in df.columns:
+        append_row("system_config", {"key": key, "value": str(value)})
         return True, "Success"
-    except Exception as e:
-        print(f"Error setting config {key}: {e}")
-        return False, str(e)
+
+    existing = df[df['key'] == key]
+    if not existing.empty:
+        update_row_by_id("system_config", existing.iloc[0]['id'], {"value": str(value)})
+    else:
+        new_id = get_next_id("system_config")
+        append_row("system_config", {"id": new_id, "key": key, "value": str(value)})
+    return True, "Success"
 
 # --- AI Usage ---
 def log_ai_usage(user_id, tokens):
-    try:
-        supabase.table("ai_usage_logs").insert({
-            "user_id": user_id,
-            "tokens_used": tokens
-        }).execute()
-    except Exception as e:
-         print(f"Error logging AI usage: {e}")
+    new_id = get_next_id("ai_usage_logs")
+    append_row("ai_usage_logs", {
+        "id": new_id, "user_id": user_id, "tokens_used": tokens
+    })
 
-# --- AI Usage (Global Daily Counter) ---
 def get_daily_ai_usage_count():
-    """Returns the total AI calls made today globally."""
     try:
-        from datetime import datetime
         today_key = f"ai_usage_{datetime.now().strftime('%Y-%m-%d')}"
         val = get_config(today_key, "0")
         return int(val)
@@ -1075,9 +1026,7 @@ def get_daily_ai_usage_count():
         return 0
 
 def increment_daily_ai_usage():
-    """Increments the global counter for today."""
     try:
-        from datetime import datetime
         today_key = f"ai_usage_{datetime.now().strftime('%Y-%m-%d')}"
         current = get_daily_ai_usage_count()
         set_config(today_key, current + 1)
@@ -1088,18 +1037,15 @@ def increment_daily_ai_usage():
 
 def reset_ai_usage():
     try:
-        from datetime import datetime
         today_key = f"ai_usage_{datetime.now().strftime('%Y-%m-%d')}"
         set_config(today_key, 0)
         return True
-    except Exception as e:
-        print(f"Error resetting: {e}")
+    except:
         return False
 
-# --- Notification Usage (Monthly) ---
+# --- Notification ---
 def get_monthly_notif_count():
     try:
-        from datetime import datetime
         month_key = f"notif_usage_{datetime.now().strftime('%Y-%m')}"
         val = get_config(month_key, "0")
         return int(val)
@@ -1108,7 +1054,6 @@ def get_monthly_notif_count():
 
 def increment_monthly_notif():
     try:
-        from datetime import datetime
         month_key = f"notif_usage_{datetime.now().strftime('%Y-%m')}"
         current = get_monthly_notif_count()
         set_config(month_key, current + 1)
@@ -1124,64 +1069,63 @@ def get_notif_limit():
         return 100
 
 def get_ai_call_limit():
-    val = get_config("ai_daily_limit", "3") # Default to 3 as requested
+    val = get_config("ai_daily_limit", "3")
     try:
         return int(val)
     except:
         return 3
 
-# --- Bodega Virtual ---
-@retry_db
+# --- Warehouse ---
 def get_warehouse_items(project_id):
-    response = supabase.table("warehouse_items").select("*").eq("project_id", project_id).execute()
-    df = pd.DataFrame(response.data)
+    df = read_worksheet("warehouse_items", [
+        'id', 'project_id', 'hoja', 'fecha', 'factura', 'cliente', 'rut',
+        'obra', 'codigo', 'descripcion', 'cantidad', 'p_unitario', 'um', 'total', 'status', 'created_at'
+    ])
     if df.empty:
         return pd.DataFrame(columns=[
-            'id', 'project_id', 'hoja', 'fecha', 'factura', 'cliente', 'rut', 
+            'id', 'project_id', 'hoja', 'fecha', 'factura', 'cliente', 'rut',
             'obra', 'codigo', 'descripcion', 'cantidad', 'p_unitario', 'um', 'total', 'status', 'created_at'
         ])
+    if project_id is not None and 'project_id' in df.columns:
+        df['project_id'] = pd.to_numeric(df['project_id'], errors='coerce')
+        df = df[df['project_id'] == int(project_id)]
+    for col in ['cantidad', 'p_unitario', 'total']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
     return df
 
 def add_warehouse_items(project_id, items_list):
-    """Agrega una lista de diccionarios extraídos por la IA a la BD"""
-    inserts = []
     for item in items_list:
-         insert_data = item.copy()
-         insert_data['project_id'] = project_id
-         
-         for col in ['cantidad', 'p_unitario', 'total']:
-             try: insert_data[col] = float(insert_data.get(col, 0))
-             except: insert_data[col] = 0.0
-             
-         insert_data['status'] = 'En Bodega'
-         inserts.append(insert_data)
-         
-    if inserts:
-        supabase.table("warehouse_items").insert(inserts).execute()
+        insert_data = item.copy()
+        insert_data['project_id'] = project_id
+        for col in ['cantidad', 'p_unitario', 'total']:
+            try:
+                insert_data[col] = float(insert_data.get(col, 0))
+            except:
+                insert_data[col] = 0.0
+        insert_data['status'] = 'En Bodega'
+        insert_data['id'] = get_next_id("warehouse_items")
+        append_row("warehouse_items", insert_data)
 
 def update_warehouse_item(item_id, item_data):
-    """Actualiza la bd a partir de lo modificado por st.data_editor"""
     update_payload = {
-        k: v for k, v in item_data.items() 
+        k: v for k, v in item_data.items()
         if k not in ['id', 'project_id', 'created_at']
     }
-    
     for col in ['cantidad', 'p_unitario', 'total']:
         if col in update_payload:
-            try: update_payload[col] = float(update_payload[col])
-            except: update_payload[col] = 0.0
-
-    supabase.table("warehouse_items").update(update_payload).eq("id", item_id).execute()
+            try:
+                update_payload[col] = float(update_payload[col])
+            except:
+                update_payload[col] = 0.0
+    update_row_by_id("warehouse_items", item_id, update_payload)
 
 def delete_warehouse_item(item_id):
-    supabase.table("warehouse_items").delete().eq("id", item_id).execute()
+    delete_row_by_id("warehouse_items", item_id)
 
-
-# --- OCR Pages Monthly Quota ---
+# --- OCR ---
 def get_monthly_ocr_page_count():
-    """Returns total OCR pages analyzed this calendar month (globally)."""
     try:
-        from datetime import datetime
         month_key = "ocr_pages_" + datetime.now().strftime('%Y-%m')
         val = get_config(month_key, "0")
         return int(val)
@@ -1189,9 +1133,7 @@ def get_monthly_ocr_page_count():
         return 0
 
 def increment_monthly_ocr_pages(pages):
-    """Increments the global monthly OCR page counter by `pages`."""
     try:
-        from datetime import datetime
         month_key = "ocr_pages_" + datetime.now().strftime('%Y-%m')
         current = get_monthly_ocr_page_count()
         set_config(month_key, current + pages)
@@ -1201,9 +1143,7 @@ def increment_monthly_ocr_pages(pages):
         return 999999
 
 def reset_monthly_ocr_pages():
-    """Resets the current month OCR page counter to 0."""
     try:
-        from datetime import datetime
         month_key = "ocr_pages_" + datetime.now().strftime('%Y-%m')
         set_config(month_key, 0)
         return True
@@ -1212,7 +1152,6 @@ def reset_monthly_ocr_pages():
         return False
 
 def get_ocr_monthly_limit():
-    """Returns the configured limit of OCR pages per month. Default 500."""
     val = get_config("ocr_monthly_page_limit", "500")
     try:
         return int(val)

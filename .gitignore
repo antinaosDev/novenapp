@@ -44,6 +44,9 @@ Thumbs.db
 *.bak
 *.cache
 
+# Google service account credentials (SECRET!)
+google_credentials.json
+
 # Distribution / packaging
 build/
 dist/

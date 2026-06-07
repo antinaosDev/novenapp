@@ -1,7 +1,6 @@
 streamlit
 pandas
 plotly
-supabase
 bcrypt
 Pillow
 matplotlib
@@ -14,5 +13,5 @@ fpdf2
 xlsxwriter
 geopy
 PyMuPDF
-
-# Force rebuild 1
+gspread
+google-auth
