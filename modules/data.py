@@ -18,19 +18,24 @@ def _get_credentials():
     ]
     try:
         gcp = st.secrets["gcp"]
-        info = {
-            "type": gcp["type"],
-            "project_id": gcp["project_id"],
-            "private_key_id": gcp["private_key_id"],
-            "private_key": gcp["private_key"],
-            "client_email": gcp["client_email"],
-            "client_id": gcp["client_id"],
-            "auth_uri": gcp["auth_uri"],
-            "token_uri": gcp["token_uri"],
-            "auth_provider_x509_cert_url": gcp["auth_provider_x509_cert_url"],
-            "client_x509_cert_url": gcp["client_x509_cert_url"],
-            "universe_domain": gcp.get("universe_domain", "googleapis.com"),
-        }
+        if "GOOGLE_CREDENTIALS_B64" in gcp:
+            import base64
+            json_str = base64.b64decode(gcp["GOOGLE_CREDENTIALS_B64"]).decode("utf-8")
+            info = json.loads(json_str)
+        else:
+            info = {
+                "type": gcp["type"],
+                "project_id": gcp["project_id"],
+                "private_key_id": gcp["private_key_id"],
+                "private_key": gcp["private_key"],
+                "client_email": gcp["client_email"],
+                "client_id": gcp["client_id"],
+                "auth_uri": gcp["auth_uri"],
+                "token_uri": gcp["token_uri"],
+                "auth_provider_x509_cert_url": gcp["auth_provider_x509_cert_url"],
+                "client_x509_cert_url": gcp["client_x509_cert_url"],
+                "universe_domain": gcp.get("universe_domain", "googleapis.com"),
+            }
         return Credentials.from_service_account_info(info, scopes=scope)
     except Exception:
         return Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scope)
