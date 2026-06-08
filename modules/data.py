@@ -45,19 +45,22 @@ def get_gs_client():
     creds = _get_credentials()
     return gspread.authorize(creds)
 
-@st.cache_resource
 def get_sheet():
     client = get_gs_client()
     return client.open_by_key(SPREADSHEET_ID)
 
 def read_worksheet(worksheet_name, expected_columns=None):
-    """Read a worksheet and return a DataFrame."""
+    """Read a worksheet and return a DataFrame (manual parse, no get_all_records)."""
     try:
         ws = get_sheet().worksheet(worksheet_name)
-        records = ws.get_all_records()
-        if not records:
+        all_rows = ws.get_all_values()
+        if len(all_rows) <= 1:
             return pd.DataFrame(columns=expected_columns or [])
-        df = pd.DataFrame(records)
+        headers = all_rows[0]
+        data_rows = [dict(zip(headers, row)) for row in all_rows[1:] if any(c.strip() for c in row)]
+        if not data_rows:
+            return pd.DataFrame(columns=expected_columns or [])
+        df = pd.DataFrame(data_rows)
         return df
     except Exception as e:
         print(f"Error reading {worksheet_name}: {e}")
@@ -79,12 +82,15 @@ def write_worksheet(worksheet_name, df):
         print(f"Error writing {worksheet_name}: {e}")
 
 def append_row(worksheet_name, row_dict):
-    """Append a single row to a worksheet."""
+    """Append a single row to a worksheet (manual append using update)."""
     try:
         ws = get_sheet().worksheet(worksheet_name)
-        headers = ws.row_values(1)
+        headers = ws.row_values(1) if ws.row_values(1) else list(row_dict.keys())
         row_values = [str(row_dict.get(h, "")) if row_dict.get(h) is not None else "" for h in headers]
-        ws.append_row(row_values)
+        all_rows = ws.get_all_values()
+        next_row = len(all_rows) + 1
+        range_str = f"A{next_row}:{chr(64 + len(headers)) if len(headers) <= 26 else 'A'}{next_row}"
+        ws.update(range_str, [row_values], value_input_option="USER_ENTERED")
     except Exception as e:
         print(f"Error appending to {worksheet_name}: {e}")
 
