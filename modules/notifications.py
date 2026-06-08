@@ -152,36 +152,40 @@ def check_and_notify_deadlines():
     def send_batch(items, type_label, name_col, date_col, tpl_func):
         count = 0
         for _, item in items.iterrows():
-            # Idempotency Check: Prevent duplicate notifications for the same event
-            notif_key = f"notif_{type_label}_{item['id']}"
-            if data.get_config(notif_key):
-                continue
+            try:
+                item_id = item.get('id', '')
+                # Idempotency Check: Prevent duplicate notifications for the same event
+                notif_key = f"notif_{type_label}_{item_id}"
+                if data.get_config(notif_key):
+                    continue
 
-            end_dt = datetime.strptime(str(item[date_col]), '%Y-%m-%d')
-            days_left = (end_dt - datetime.now()).days + 1
-            
-            # Subject
-            if type_label == 'Garantía':
-                subject = f"⚠️ Vencimiento Garantía: {item.get('type', 'Doc')} ({days_left} días)"
-                msg = tpl_func(item.get('type', 'Doc'), item.get('amount', 0), item[date_col], days_left)
-            elif type_label == 'Contrato':
-                subject = f"⚠️ Vencimiento Contrato: {item.get('contractor_name', 'Contratista')} ({days_left} días)"
-                msg = tpl_func(item.get('contractor_name', 'Unknown'), item[date_col], days_left)
-            else:
-                subject = f"⚠️ Vencimiento Proyecto: {item[name_col]} ({days_left} días)"
-                msg = tpl_func(item[name_col], item[date_col], days_left)
-            
-            # Send to all recipients
-            success_any = False
-            for _, u in recipients.iterrows():
-                if send_notification(u['email'], subject, msg):
-                    success_any = True
-                    count += 1
-            
-            # Mark as notified if at least one email went out (or even if not, to avoid retry loops on errors? Better only on success)
-            if success_any:
-                data.set_config(notif_key, datetime.now().strftime('%Y-%m-%d'))
-                log.append(f"{type_label} ID {item['id']}: Alertados {len(recipients)} usuarios.")
+                end_dt = datetime.strptime(str(item[date_col]), '%Y-%m-%d')
+                days_left = (end_dt - datetime.now()).days + 1
+                
+                # Subject
+                if type_label == 'Garantía':
+                    subject = f"⚠️ Vencimiento Garantía: {item.get('type', 'Doc')} ({days_left} días)"
+                    msg = tpl_func(item.get('type', 'Doc'), item.get('amount', 0), item[date_col], days_left)
+                elif type_label == 'Contrato':
+                    subject = f"⚠️ Vencimiento Contrato: {item.get('contractor_name', 'Contratista')} ({days_left} días)"
+                    msg = tpl_func(item.get('contractor_name', 'Unknown'), item[date_col], days_left)
+                else:
+                    subject = f"⚠️ Vencimiento Proyecto: {item[name_col]} ({days_left} días)"
+                    msg = tpl_func(item[name_col], item[date_col], days_left)
+                
+                # Send to all recipients
+                success_any = False
+                for _, u in recipients.iterrows():
+                    if send_notification(u['email'], subject, msg):
+                        success_any = True
+                        count += 1
+                
+                # Mark as notified if at least one email went out
+                if success_any:
+                    data.set_config(notif_key, datetime.now().strftime('%Y-%m-%d'))
+                    log.append(f"{type_label} ID {item_id}: Alertados {len(recipients)} usuarios.")
+            except Exception as batch_e:
+                log.append(f"Error procesando {type_label} fila: {batch_e}")
         return count
 
     # 3. Process each type
@@ -221,5 +225,6 @@ def run_daily_automation():
             return False, "Already checked today."
             
     except Exception as e:
-        print(f"Error in daily automation: {e}")
+        import traceback
+        print(f"Error in daily automation: {e}\n{traceback.format_exc()}")
         return False, str(e)

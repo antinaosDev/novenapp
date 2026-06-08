@@ -50,6 +50,8 @@ def render_dashboard():
         if not exp_grouped.empty or not pos_grouped.empty:
              # Outer join to keep all project costs
              costs_merged = pd.merge(exp_grouped, pos_grouped, on='project_id', how='outer').fillna(0)
+             # Ensure project_id is numeric for later merge
+             costs_merged['project_id'] = pd.to_numeric(costs_merged['project_id'], errors='coerce')
              # User requested ONLY Purchase Orders (OC) to be counted as execution.
              # 'total_exp' (Petty Cash/Expenses table) seems to contain Allocated Items values ($3.4M) that user wants excluded.
              costs_merged['amount'] = costs_merged['total_pos'] 
