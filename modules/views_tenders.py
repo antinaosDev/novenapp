@@ -284,55 +284,55 @@ def render_tenders():
                              width='stretch'
                          )
                          
-                          # Selector for Management
-                          sel_contract = st.selectbox("Seleccionar Contrato para Gestionar:", contracts_df['id'].tolist(), format_func=lambda x: f"CTR-{x} | {contracts_df[contracts_df['id']==x]['contractor_name'].values[0]}")
-                          
-                          if sel_contract:
-                              k_filtered = contracts_df[contracts_df['id'] == sel_contract]
-                              if k_filtered.empty:
-                                  st.error("Contrato no encontrado.")
-                              else:
-                                  k_row = k_filtered.iloc[0]
-                                  with st.container(border=True):
-                                      st.markdown(f"**Editando Contrato: {k_row['contractor_name']}**")
-                                      
-                                      with st.form(f"edit_ctr_{sel_contract}"):
-                                          ec1, ec2 = st.columns(2)
-                                          ec_name = ec1.text_input("Razón Social", value=k_row['contractor_name'])
-                                          ec_rut = ec2.text_input("RUT", value=k_row['rut_contractor'])
-                                          
-                                          ec3, ec4 = st.columns(2)
-                                          ec_amount = ec3.number_input("Monto ($)", value=float(k_row['amount']))
-                                          try:
-                                              curr_start = pd.to_datetime(k_row['start_date']).date()
-                                              curr_end = pd.to_datetime(k_row['end_date']).date()
-                                          except:
-                                              from datetime import datetime
-                                              curr_start = datetime.now().date()
-                                              curr_end = datetime.now().date()
-                                              
-                                          ec_start = ec4.date_input("Inicio", value=curr_start)
-                                          
-                                          ec5, ec6 = st.columns(2)
-                                          ec_end = ec5.date_input("Término", value=curr_end)
-                                          
-                                          curr_st = k_row.get('status', 'Activo')
-                                          st_opts = ["Activo", "Finalizado", "Rescindido"]
-                                          ec_status = ec6.selectbox("Estado", st_opts, index=st_opts.index(curr_st) if curr_st in st_opts else 0)
-                                          
-                                          if st.form_submit_button("Actualizar Contrato"):
-                                              licitaciones.update_contract(sel_contract, ec_name, ec_rut, ec_amount, ec_start, ec_end, ec_status)
-                                              st.toast("Contrato Actualizado")
-                                              st.rerun()
-                                      
-                                      c_del_k, _ = st.columns([1, 2])
-                                      with c_del_k:
-                                          if st.button("🗑️ Borrar Contrato", key=f"del_ctr_{sel_contract}"):
-                                              if can_delete:
-                                                  licitaciones.delete_contract(sel_contract)
-                                                  st.rerun()
-                                              else:
-                                                  st.error("No autorizado.")
+                         # Selector for Management
+                         sel_contract = st.selectbox("Seleccionar Contrato para Gestionar:", contracts_df['id'].tolist(), format_func=lambda x: f"CTR-{x} | {contracts_df[contracts_df['id']==x]['contractor_name'].values[0]}")
+                         
+                         if sel_contract:
+                             k_filtered = contracts_df[contracts_df['id'] == sel_contract]
+                             if k_filtered.empty:
+                                 st.error("Contrato no encontrado.")
+                             else:
+                                 k_row = k_filtered.iloc[0]
+                                 with st.container(border=True):
+                                     st.markdown(f"**Editando Contrato: {k_row['contractor_name']}**")
+                                     
+                                     with st.form(f"edit_ctr_{sel_contract}"):
+                                         ec1, ec2 = st.columns(2)
+                                         ec_name = ec1.text_input("Razón Social", value=k_row['contractor_name'])
+                                         ec_rut = ec2.text_input("RUT", value=k_row['rut_contractor'])
                                          
-                                 # --- GUARANTEES SECTION REMOVED ---
-                                 # (User requested removal of Boletas de Garantía view)
+                                         ec3, ec4 = st.columns(2)
+                                         ec_amount = ec3.number_input("Monto ($)", value=float(k_row['amount']))
+                                         try:
+                                             curr_start = pd.to_datetime(k_row['start_date']).date()
+                                             curr_end = pd.to_datetime(k_row['end_date']).date()
+                                         except:
+                                             from datetime import datetime
+                                             curr_start = datetime.now().date()
+                                             curr_end = datetime.now().date()
+                                             
+                                         ec_start = ec4.date_input("Inicio", value=curr_start)
+                                         
+                                         ec5, ec6 = st.columns(2)
+                                         ec_end = ec5.date_input("Término", value=curr_end)
+                                         
+                                         curr_st = k_row.get('status', 'Activo')
+                                         st_opts = ["Activo", "Finalizado", "Rescindido"]
+                                         ec_status = ec6.selectbox("Estado", st_opts, index=st_opts.index(curr_st) if curr_st in st_opts else 0)
+                                         
+                                         if st.form_submit_button("Actualizar Contrato"):
+                                             licitaciones.update_contract(sel_contract, ec_name, ec_rut, ec_amount, ec_start, ec_end, ec_status)
+                                             st.toast("Contrato Actualizado")
+                                             st.rerun()
+                                     
+                                     c_del_k, _ = st.columns([1, 2])
+                                     with c_del_k:
+                                         if st.button("🗑️ Borrar Contrato", key=f"del_ctr_{sel_contract}"):
+                                             if can_delete:
+                                                 licitaciones.delete_contract(sel_contract)
+                                                 st.rerun()
+                                             else:
+                                                 st.error("No autorizado.")
+                                        
+                                # --- GUARANTEES SECTION REMOVED ---
+                                # (User requested removal of Boletas de Garantía view)
