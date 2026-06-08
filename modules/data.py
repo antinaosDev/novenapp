@@ -148,7 +148,13 @@ def get_next_id(worksheet_name):
 
 # --- Initialization ---
 def init_db():
-    pass
+    """Verify sheet connection, show error in UI if it fails."""
+    try:
+        ws = get_sheet().worksheet("projects")
+        ws.get_all_values()
+    except Exception as e:
+        st.error(f"❌ Error de conexión con Google Sheets: {e}")
+        st.stop()
 
 # --- Projects ---
 def add_project(name, description, budget, start_date, end_date, lat=-33.4489, lon=-70.6693):
