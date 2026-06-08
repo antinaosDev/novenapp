@@ -50,22 +50,30 @@ def get_sheet():
     client = get_gs_client()
     return client.open_by_key(SPREADSHEET_ID)
 
-def read_worksheet(worksheet_name, expected_columns=None):
-    """Read a worksheet and return a DataFrame (manual parse, no get_all_records)."""
+@st.cache_data(ttl=3, show_spinner=False)
+def _read_worksheet_cached(worksheet_name):
     try:
         ws = get_sheet().worksheet(worksheet_name)
-        all_rows = ws.get_all_values()
-        if len(all_rows) <= 1:
-            return pd.DataFrame(columns=expected_columns or [])
-        headers = all_rows[0]
-        data_rows = [dict(zip(headers, row)) for row in all_rows[1:] if any(c.strip() for c in row)]
-        if not data_rows:
-            return pd.DataFrame(columns=expected_columns or [])
-        df = pd.DataFrame(data_rows)
-        return df
+        return ws.get_all_values()
     except Exception as e:
         print(f"Error reading {worksheet_name}: {e}")
+        return []
+
+def _clear_worksheet_cache(worksheet_name=None):
+    if worksheet_name:
+        _read_worksheet_cached.clear(worksheet_name)
+    else:
+        _read_worksheet_cached.clear()
+
+def read_worksheet(worksheet_name, expected_columns=None):
+    all_rows = _read_worksheet_cached(worksheet_name)
+    if not all_rows or len(all_rows) <= 1:
         return pd.DataFrame(columns=expected_columns or [])
+    headers = all_rows[0]
+    data_rows = [dict(zip(headers, row)) for row in all_rows[1:] if any(c.strip() for c in row)]
+    if not data_rows:
+        return pd.DataFrame(columns=expected_columns or [])
+    return pd.DataFrame(data_rows)
 
 def write_worksheet(worksheet_name, df):
     """Write a DataFrame back to a worksheet (full replace)."""
@@ -74,11 +82,11 @@ def write_worksheet(worksheet_name, df):
         ws.clear()
         if df.empty:
             ws.update([["(sin datos)"]], "A1")
-            return
-        headers = list(df.columns)
-        values = df.values.tolist()
-        data = [headers] + values
-        ws.update(data, "A1")
+        else:
+            headers = list(df.columns)
+            values = df.values.tolist()
+            ws.update([headers] + values, "A1")
+        _clear_worksheet_cache(worksheet_name)
     except Exception as e:
         print(f"Error writing {worksheet_name}: {e}")
 
@@ -92,6 +100,7 @@ def append_row(worksheet_name, row_dict):
         next_row = len(all_rows) + 1
         range_str = f"A{next_row}:{chr(64 + len(headers)) if len(headers) <= 26 else 'A'}{next_row}"
         ws.update(range_str, [row_values], value_input_option="USER_ENTERED")
+        _clear_worksheet_cache(worksheet_name)
     except Exception as e:
         print(f"Error appending to {worksheet_name}: {e}")
 
@@ -111,6 +120,7 @@ def update_row_by_id(worksheet_name, row_id, update_dict):
                         col = headers.index(key) + 1
                         ws.update_cell(i, col, str(value) if value is not None else "")
                 break
+        _clear_worksheet_cache(worksheet_name)
     except Exception as e:
         print(f"Error updating {worksheet_name} id={row_id}: {e}")
 
@@ -127,6 +137,7 @@ def delete_row_by_id(worksheet_name, row_id):
             if row[id_col - 1] == str(row_id):
                 ws.delete_rows(i)
                 break
+        _clear_worksheet_cache(worksheet_name)
     except Exception as e:
         print(f"Error deleting from {worksheet_name} id={row_id}: {e}")
 
@@ -151,8 +162,7 @@ def get_next_id(worksheet_name):
 def init_db():
     """Verify sheet connection, show error in UI if it fails."""
     try:
-        ws = get_sheet().worksheet("projects")
-        ws.get_all_values()
+        _read_worksheet_cached("projects")
     except Exception as e:
         st.error(f"❌ Error de conexión con Google Sheets: {e}")
         st.stop()
@@ -1026,11 +1036,13 @@ def set_config(key, value):
                 if len(row) > 0 and row[0] == key:
                     val_col = headers.index('value') + 1 if 'value' in headers else 2
                     ws.update_cell(i, val_col, str(value))
+                    _clear_worksheet_cache("system_config")
                     return True, "Updated"
         # Not found or no headers → append
         if not headers or headers[0] != 'key':
             ws.update([['key', 'value']], 'A1')
         ws.append_row([key, str(value)])
+        _clear_worksheet_cache("system_config")
         return True, "Appended"
     except Exception as e:
         print(f"Error set_config({key}): {e}")
