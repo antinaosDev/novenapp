@@ -7,10 +7,30 @@ import json
 import os
 import time
 import random
+import threading
 
 # --- Config ---
 SPREADSHEET_ID = "1dFeMiekQKnA4xRPju9Wd62JWd_4fmW-xvqZ7XpdXDEY"
 CREDENTIALS_FILE = "google_credentials.json"
+
+# --- Global API Rate Limiter ---
+_api_lock = threading.Lock()
+_last_api_call = 0.0
+
+def _throttle():
+    """Enforce minimum 1-second interval between API calls (serializes across threads)."""
+    global _last_api_call
+    with _api_lock:
+        now = time.time()
+        elapsed = now - _last_api_call
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
+        _last_api_call = time.time()
+
+# --- Modular Cache (replaces @st.cache_data) ---
+_CACHE = {}
+_CACHE_LOCK = threading.Lock()
+_CACHE_TTL = 120  # seconds
 
 # --- Google Sheets Connection ---
 def _get_credentials():
@@ -52,23 +72,89 @@ def get_sheet():
     client = get_gs_client()
     return client.open_by_key(SPREADSHEET_ID)
 
-@st.cache_data(ttl=10, show_spinner=False)
 def _read_worksheet_cached(worksheet_name):
-    try:
-        ws = get_sheet().worksheet(worksheet_name)
-        return ws.get_all_values()
-    except Exception as e:
-        print(f"Error reading {worksheet_name}: {e}")
-        return []
+    with _CACHE_LOCK:
+        entry = _CACHE.get(worksheet_name)
+        if entry and time.time() - entry['time'] < _CACHE_TTL:
+            return entry['data']
+    for attempt in range(5):
+        try:
+            _throttle()
+            ws = get_sheet().worksheet(worksheet_name)
+            _throttle()
+            data = ws.get_all_values()
+            with _CACHE_LOCK:
+                _CACHE[worksheet_name] = {'data': data, 'time': time.time()}
+            return data
+        except Exception as e:
+            if _is_rate_limit(e) and attempt < 4:
+                delay = 1.5 ** attempt + random.random()
+                time.sleep(delay)
+                continue
+            if _is_rate_limit(e):
+                print(f"Rate limit exceeded for {worksheet_name} after 5 retries")
+            else:
+                print(f"Error reading {worksheet_name}: {e}")
+            return []
+    return []
+
+def _batch_read_worksheets(worksheet_names):
+    names = list(dict.fromkeys(worksheet_names))
+    with _CACHE_LOCK:
+        needed = {n for n in names if n not in _CACHE or time.time() - _CACHE[n]['time'] >= _CACHE_TTL}
+    if not needed:
+        with _CACHE_LOCK:
+            return {n: _CACHE[n]['data'] for n in names}
+    for attempt in range(5):
+        try:
+            _throttle()
+            ranges = [f"'{n}'!A:ZZ" for n in needed]
+            result = get_sheet().values_batch_get(ranges)
+            data_map = {}
+            for vr in result.get('valueRanges', []):
+                range_str = vr.get('range', '')
+                if '!' not in range_str:
+                    continue
+                name = range_str.split('!')[0].strip("'")
+                values = vr.get('values', [])
+                data_map[name] = values
+            now = time.time()
+            with _CACHE_LOCK:
+                for n in needed:
+                    if n in data_map:
+                        _CACHE[n] = {'data': data_map[n], 'time': now}
+                result_map = {}
+                for n in names:
+                    cached = _CACHE.get(n)
+                    if cached:
+                        result_map[n] = cached['data']
+                    else:
+                        result_map[n] = data_map.get(n, [])
+            return result_map
+        except Exception as e:
+            if _is_rate_limit(e) and attempt < 4:
+                delay = 1.5 ** attempt + random.random()
+                time.sleep(delay)
+                continue
+            if _is_rate_limit(e):
+                print(f"Rate limit exceeded for batch read after 5 retries")
+            else:
+                print(f"Error in batch read: {e}")
+            fallback = {}
+            for n in names:
+                fallback[n] = _read_worksheet_cached(n)
+            return fallback
+    return {}
 
 def _clear_worksheet_cache(worksheet_name=None):
-    if worksheet_name:
-        _read_worksheet_cached.clear(worksheet_name)
-    else:
-        _read_worksheet_cached.clear()
+    with _CACHE_LOCK:
+        if worksheet_name:
+            _CACHE.pop(worksheet_name, None)
+        else:
+            _CACHE.clear()
 
 def _is_rate_limit(e):
-    return hasattr(e, 'code') and e.code == 429 or '429' in str(e)
+    return (hasattr(e, 'code') and e.code == 429) or '429' in str(e)
 
 def _retry(fn, max_retries=3):
     for attempt in range(max_retries):
@@ -94,7 +180,9 @@ def read_worksheet(worksheet_name, expected_columns=None):
 
 def write_worksheet(worksheet_name, df):
     try:
+        _throttle()
         ws = get_sheet().worksheet(worksheet_name)
+        _throttle()
         ws.clear()
         if df.empty:
             ws.update([["(sin datos)"]], "A1")
@@ -110,6 +198,7 @@ def write_worksheet(worksheet_name, df):
 
 def append_row(worksheet_name, row_dict):
     try:
+        _throttle()
         ws = get_sheet().worksheet(worksheet_name)
         all_rows = _read_worksheet_cached(worksheet_name)
         headers = all_rows[0] if all_rows else list(row_dict.keys())
@@ -135,6 +224,7 @@ def append_row(worksheet_name, row_dict):
 
 def update_row_by_id(worksheet_name, row_id, update_dict):
     try:
+        _throttle()
         ws = get_sheet().worksheet(worksheet_name)
         all_rows = _read_worksheet_cached(worksheet_name)
         headers = all_rows[0] if all_rows else []
@@ -162,6 +252,7 @@ def update_row_by_id(worksheet_name, row_id, update_dict):
 
 def delete_row_by_id(worksheet_name, row_id):
     try:
+        _throttle()
         ws = get_sheet().worksheet(worksheet_name)
         all_rows = _read_worksheet_cached(worksheet_name)
         headers = all_rows[0] if all_rows else []
@@ -201,9 +292,13 @@ def get_next_id(worksheet_name):
 
 # --- Initialization ---
 def init_db():
-    """Verify sheet connection, show error in UI if it fails."""
+    """Verify sheet connection and preload common sheets via batchGet."""
     try:
-        _read_worksheet_cached("projects")
+        _batch_read_worksheets([
+            "projects", "users", "purchase_orders", "tasks",
+            "subcontractors", "tenders", "expenses", "comments",
+            "project_assignments", "faenas", "units", "system_config"
+        ])
     except Exception as e:
         st.error(f"❌ Error de conexión con Google Sheets: {e}")
         st.stop()
@@ -251,17 +346,21 @@ def delete_project(project_id):
     ]
     for sheet_name in sheets_to_check:
         try:
+            _throttle()
             ws = get_sheet().worksheet(sheet_name)
+            _throttle()
             headers = ws.row_values(1)
             if 'project_id' not in headers:
                 continue
             pid_col = headers.index('project_id') + 1
+            _throttle()
             all_rows = ws.get_all_values()
             rows_to_delete = []
             for i, row in enumerate(all_rows[1:], start=2):
                 if len(row) >= pid_col and row[pid_col - 1] == str(project_id):
                     rows_to_delete.append(i)
             for row_idx in reversed(rows_to_delete):
+                _throttle()
                 ws.delete_rows(row_idx)
         except:
             pass
@@ -511,13 +610,17 @@ def run_query(query_str, params=None, return_df=True):
     print(f"WARNING: RAW SQL ATTEMPTED: {query_str}")
 
     if "SELECT * FROM users WHERE username" in query_str:
-        user = params[0]
+        user = params[0] if params and len(params) > 0 else None
+        if not user:
+            return pd.DataFrame()
         df = read_worksheet("users")
         if not df.empty and 'username' in df.columns:
             return df[df['username'] == user]
         return pd.DataFrame()
 
     if "INSERT INTO users" in query_str:
+        if not params or len(params) < 4:
+            return False
         data = {
             "username": params[0], "password_hash": params[1],
             "full_name": params[2], "role": params[3]
@@ -1069,20 +1172,31 @@ def get_config(key, default=None):
 def set_config(key, value):
     """Set a config key-value pair. Works with or without 'id' column."""
     try:
+        _throttle()
         ws = get_sheet().worksheet("system_config")
+        _throttle()
         headers = ws.row_values(1)
         if headers and 'key' in headers:
+            _throttle()
             all_rows = ws.get_all_values()
             for i, row in enumerate(all_rows[1:], start=2):
                 if len(row) > 0 and row[0] == key:
                     val_col = headers.index('value') + 1 if 'value' in headers else 2
-                    ws.update_cell(i, val_col, str(value))
+                    def _do_update_cell():
+                        ws.update_cell(i, val_col, str(value))
+                    result, ok = _retry(_do_update_cell)
+                    if not ok:
+                        return False, "Failed after retries"
                     _clear_worksheet_cache("system_config")
                     return True, "Updated"
         # Not found or no headers → append
         if not headers or headers[0] != 'key':
             ws.update([['key', 'value']], 'A1')
-        ws.append_row([key, str(value)])
+        def _do_append():
+            ws.append_row([key, str(value)])
+        result, ok = _retry(_do_append)
+        if not ok:
+            return False, "Failed after retries"
         _clear_worksheet_cache("system_config")
         return True, "Appended"
     except Exception as e:

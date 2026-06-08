@@ -249,7 +249,14 @@ def get_timeline_html(project_id):
 def render_project_details(project_id):
     """Detailed view for a specific project."""
     projects = data.get_projects()
-    project = projects[projects['id'] == project_id].iloc[0]
+    if projects.empty:
+        st.error("Error al cargar datos. Google Sheets puede estar sobrecargado (límite de 60 req/min). Reintenta en unos segundos.")
+        st.stop()
+    project = projects[projects['id'] == project_id]
+    if project.empty:
+        st.error(f"Proyecto ID {project_id} no encontrado.")
+        st.stop()
+    project = project.iloc[0]
     
     # Permissions
     role = st.session_state.get('user_role')
@@ -540,7 +547,11 @@ def render_project_details(project_id):
             phase_to_edit = st.selectbox("Gestionar Fase:", phases['id'].tolist(), format_func=lambda x: phases[phases['id']==x]['name'].values[0], key="ph_sel")
             
             if phase_to_edit:
-                row_ph = phases[phases['id']==phase_to_edit].iloc[0]
+                filtered_ph = phases[phases['id']==phase_to_edit]
+                if filtered_ph.empty:
+                    st.error("Fase no encontrada.")
+                    return
+                row_ph = filtered_ph.iloc[0]
                 
                 with st.popover("✏️ Editar Fase"):
                     with st.form(f"edit_ph_{phase_to_edit}"):
@@ -1135,7 +1146,11 @@ def render_project_details(project_id):
                             changes_made = True
                         else:
                             # Validate Update (detect changes in ANY column)
-                            orig_row = warehouse_df[warehouse_df['id'] == row_dict['id']].iloc[0]
+                            orig_row_filtered = warehouse_df[warehouse_df['id'] == row_dict['id']]
+                            if orig_row_filtered.empty:
+                                changes_made = True
+                                continue
+                            orig_row = orig_row_filtered.iloc[0]
                             is_different = False
                             for col in ['status', 'cantidad', 'cantidad_usada', 'descripcion', 'codigo', 'um', 'p_unitario', 'total', 'hoja', 'nombre_documento']:
                                 # Robust comparison

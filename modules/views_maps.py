@@ -171,26 +171,30 @@ def render_maps():
                 )
                 
                 if sel_unit_id:
-                    u_row = units_df[units_df['id'] == sel_unit_id].iloc[0]
+                    unit_filtered = units_df[units_df['id'] == sel_unit_id]
+                    if unit_filtered.empty:
+                        st.error("Recurso no encontrado.")
+                    else:
+                        u_row = unit_filtered.iloc[0]
                     
-                    with st.container(border=True):
-                        st.write(f"**Editando: {u_row['name']}**")
-                        
-                        with st.form(f"edit_unit_{sel_unit_id}"):
-                            c_e1, c_e2 = st.columns(2)
-                            new_u_name = c_e1.text_input("Nombre", value=u_row['name'])
-                            curr_type = u_row['type']
-                            type_opts = ["Maquinaria", "Vehículo", "Herramienta", "Tecnología"]
-                            new_u_type = c_e2.selectbox("Tipo", type_opts, index=type_opts.index(curr_type) if curr_type in type_opts else 0)
+                        with st.container(border=True):
+                            st.write(f"**Editando: {u_row['name']}**")
                             
-                            new_u_det = st.text_input("Detalles / Estado", value=u_row['details'])
+                            with st.form(f"edit_unit_{sel_unit_id}"):
+                                c_e1, c_e2 = st.columns(2)
+                                new_u_name = c_e1.text_input("Nombre", value=u_row['name'])
+                                curr_type = u_row['type']
+                                type_opts = ["Maquinaria", "Vehículo", "Herramienta", "Tecnología"]
+                                new_u_type = c_e2.selectbox("Tipo", type_opts, index=type_opts.index(curr_type) if curr_type in type_opts else 0)
+                                
+                                new_u_det = st.text_input("Detalles / Estado", value=u_row['details'])
+                                
+                                if st.form_submit_button("💾 Actualizar Recurso"):
+                                    data.update_unit(sel_unit_id, new_u_name, new_u_type, new_u_det)
+                                    st.toast("Recurso actualizado", icon="✅")
+                                    st.rerun()
                             
-                            if st.form_submit_button("💾 Actualizar Recurso"):
-                                data.update_unit(sel_unit_id, new_u_name, new_u_type, new_u_det)
-                                st.toast("Recurso actualizado", icon="✅")
-                                st.rerun()
-                        
-                        st.markdown("")
+                            st.markdown("")
                         if st.button("🗑️ Eliminar Recurso", key=f"del_unit_{sel_unit_id}", type="primary"):
                              data.delete_unit(sel_unit_id)
                              st.toast("Recurso eliminado", icon="🗑️")

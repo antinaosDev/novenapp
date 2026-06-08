@@ -223,52 +223,52 @@ def render_compliance():
             )
             
             if sub_id:
-                sel_row = subs_df[subs_df['id'] == sub_id].iloc[0]
+                sub_filtered = subs_df[subs_df['id'] == sub_id]
+                if sub_filtered.empty:
+                    st.error("Subcontratista no encontrado.")
+                else:
+                    sel_row = sub_filtered.iloc[0]
+                    
+                    st.info(f"Gestionando: **{sel_row['name']}**")
                 
-                st.info(f"Gestionando: **{sel_row['name']}**")
-                
-                t_info, t_docs = st.tabs(["📝 Datos Generales", "📂 Documentación Compliance"])
-                
-                # TAB 1: General Info
-                with t_info:
-                    with st.form(f"edit_sub_{sub_id}"):
-                         c1, c2 = st.columns(2)
-                         e_name = c1.text_input("Razón Social", value=sel_row['name'])
-                         e_rut = c2.text_input("RUT", value=sel_row['rut'])
-                         
-                         c3, c4 = st.columns(2)
-                         e_spec = c3.text_input("Especialidad", value=sel_row.get('specialty', ''))
-                         e_rep = c4.text_input("Representante", value=sel_row.get('representative', ''))
-                         
-                         c5, c6 = st.columns(2)
-                         e_email = c5.text_input("Email", value=sel_row.get('contact_email', ''))
-                         e_phone = c6.text_input("Teléfono", value=sel_row.get('contact_phone', ''))
-                         
-                         e_monto = st.number_input("Monto Asignado ($)", value=float(sel_row.get('monto_asignado', 0) if pd.notnull(sel_row.get('monto_asignado')) else 0), step=10000.0, format="%.0f")
-                         
-                         st.divider()
-                         curr_status = sel_row['status']
-                         st_opts = ["Activo", "Bloqueado", "Pago Autorizado"]
-                         e_status = st.selectbox("Estado Operativo", st_opts, index=st_opts.index(curr_status) if curr_status in st_opts else 0)
-                         
-                         if st.form_submit_button("Guardar Cambios"):
-                             compliance.update_subcontractor(sub_id, e_name, e_rut, e_email, e_phone, e_spec, e_rep, e_monto)
-                             if e_status != curr_status:
-                                 compliance.update_sub_status(sub_id, e_status)
-                             st.toast("Datos actualizados", icon="💾")
-                             st.rerun()
+                    t_info, t_docs = st.tabs(["📝 Datos Generales", "📂 Documentación Compliance"])
+                    
+                    # TAB 1: General Info
+                    with t_info:
+                        with st.form(f"edit_sub_{sub_id}"):
+                            c1, c2 = st.columns(2)
+                            e_name = c1.text_input("Razón Social", value=sel_row['name'])
+                            e_rut = c2.text_input("RUT", value=sel_row['rut'])
+                            c3, c4 = st.columns(2)
+                            e_spec = c3.text_input("Especialidad", value=sel_row.get('specialty', ''))
+                            e_rep = c4.text_input("Representante", value=sel_row.get('representative', ''))
+                            c5, c6 = st.columns(2)
+                            e_email = c5.text_input("Email", value=sel_row.get('contact_email', ''))
+                            e_phone = c6.text_input("Teléfono", value=sel_row.get('contact_phone', ''))
+                            e_monto = st.number_input("Monto Asignado ($)", value=float(sel_row.get('monto_asignado', 0) if pd.notnull(sel_row.get('monto_asignado')) else 0), step=10000.0, format="%.0f")
+                            st.divider()
+                            curr_status = sel_row['status']
+                            st_opts = ["Activo", "Bloqueado", "Pago Autorizado"]
+                            e_status = st.selectbox("Estado Operativo", st_opts, index=st_opts.index(curr_status) if curr_status in st_opts else 0)
+                            if st.form_submit_button("Guardar Cambios"):
+                                compliance.update_subcontractor(sub_id, e_name, e_rut, e_email, e_phone, e_spec, e_rep, e_monto)
+                                if e_status != curr_status:
+                                    compliance.update_sub_status(sub_id, e_status)
+                                st.toast("Datos actualizados", icon="💾")
+                                st.rerun()
 
-                    if st.button("🗑️ Eliminar Empresa", key=f"del_sub_{sub_id}"):
-                        if can_delete:
-                            compliance.delete_subcontractor(sub_id)
-                            st.toast("Empresa eliminada", icon="🗑️")
-                            st.rerun()
-                        else:
-                            st.error("No autorizado.")
+                    with st.container():
+                        if st.button("🗑️ Eliminar Empresa", key=f"del_sub_{sub_id}"):
+                            if can_delete:
+                                compliance.delete_subcontractor(sub_id)
+                                st.toast("Empresa eliminada", icon="🗑️")
+                                st.rerun()
+                            else:
+                                st.error("No autorizado.")
 
-                # TAB 2: Documents
-                with t_docs:
-                    st.write("**Registro de Documentos de La Empresa**")
+                    # TAB 2: Documents
+                    with t_docs:
+                        st.write("**Registro de Documentos de La Empresa**")
                     
                     docs_df = compliance.get_documents(sub_id)
                     if not docs_df.empty:

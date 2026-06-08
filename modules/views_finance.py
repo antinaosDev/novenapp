@@ -233,10 +233,14 @@ def render_finance():
             po_id = None
              
         if po_id:
-             row = orders_df[orders_df['id'] == po_id].iloc[0]
-             
-             with st.container(border=True):
-                 st.markdown(f"**Editando OC-{row['id']}** ({row['order_number']})")
+             po_filtered = orders_df[orders_df['id'] == po_id]
+             if po_filtered.empty:
+                 st.error("Orden de Compra no encontrada.")
+             else:
+                 row = po_filtered.iloc[0]
+                 
+                 with st.container(border=True):
+                     st.markdown(f"**Editando OC-{row['id']}** ({row['order_number']})")
                  
                  with st.form(f"edit_po_{po_id}"):
                      # Edit Fields

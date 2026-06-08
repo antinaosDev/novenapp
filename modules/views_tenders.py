@@ -190,54 +190,58 @@ def render_tenders():
                  pass # Layout spacer
             
             if selected_tender_id:
-                 tender_row = tenders_df[tenders_df['id'] == selected_tender_id].iloc[0]
-                 st.markdown("---")
-                 
-                 # Management Form inside container
-                 with st.container(border=False):
-                     st.write(f"**Gestionando: {tender_row['title']}**")
+                 tender_filtered = tenders_df[tenders_df['id'] == selected_tender_id]
+                 if tender_filtered.empty:
+                     st.error("Licitación no encontrada.")
+                 else:
+                     tender_row = tender_filtered.iloc[0]
+                     st.markdown("---")
                      
-                     with st.form(f"manage_{selected_tender_id}"):
-                         c1, c2 = st.columns(2)
-                         new_title = c1.text_input("Editar Título", value=tender_row['title'])
-                         new_budget = c2.number_input("Editar Presupuesto", value=float(tender_row['budget_estimated']))
-                         
-                         c3, c4 = st.columns(2)
-                         new_mp_id = c3.text_input("ID Mercado Público", value=tender_row.get('mercado_publico_id', ''))
-                         
-                         # Tipo (Handle existing)
-                         curr_type = tender_row['type'] if tender_row['type'] in ["L1", "LE", "LP", "LQ", "LR", "LS"] else "LP"
-                         tipos_opts = ["L1", "LE", "LP", "LQ", "LR", "LS"]
-                         new_type = c4.selectbox("Tipo", tipos_opts, index=tipos_opts.index(curr_type) if curr_type in tipos_opts else 0)
-                         
-                         c5, c6 = st.columns(2)
-                         # Status Management
-                         curr_status = tender_row['status']
-                         status_opts = ["Borrador", "Activa", "Evaluación", "Adjudicada", "Desierta"]
-                         new_status = c5.selectbox("Estado Actual", status_opts, index=status_opts.index(curr_status) if curr_status in status_opts else 0)
-                         
-                         btn_save = st.form_submit_button("💾 Guardar Cambios", type="primary")
-                         
-                         if btn_save:
-                              # Save all fields including status
-                              licitaciones.update_tender(selected_tender_id, new_title, new_budget, new_mp_id, new_type)
-                              if new_status != curr_status:
-                                  licitaciones.update_tender_status(selected_tender_id, new_status)
-                              
-                              st.toast("Licitación actualizada", icon="💾")
-                              st.rerun()
+                      # Management Form inside container
+                     with st.container(border=False):
+                         st.write(f"**Gestionando: {tender_row['title']}**")
                      
-                     st.markdown("")
-                     if st.button("🗑️ Eliminar Licitación", key=f"del_ten_{selected_tender_id}", type="primary"):
-                          if can_delete:
-                              licitaciones.delete_tender(selected_tender_id)
-                              st.toast("Eliminado", icon="🗑️")
-                              st.rerun()
-                          else:
-                              st.error("Permiso denegado.")
+                         with st.form(f"manage_{selected_tender_id}"):
+                             c1, c2 = st.columns(2)
+                             new_title = c1.text_input("Editar Título", value=tender_row['title'])
+                             new_budget = c2.number_input("Editar Presupuesto", value=float(tender_row['budget_estimated']))
+                             
+                             c3, c4 = st.columns(2)
+                             new_mp_id = c3.text_input("ID Mercado Público", value=tender_row.get('mercado_publico_id', ''))
+                             
+                             # Tipo (Handle existing)
+                             curr_type = tender_row['type'] if tender_row['type'] in ["L1", "LE", "LP", "LQ", "LR", "LS"] else "LP"
+                             tipos_opts = ["L1", "LE", "LP", "LQ", "LR", "LS"]
+                             new_type = c4.selectbox("Tipo", tipos_opts, index=tipos_opts.index(curr_type) if curr_type in tipos_opts else 0)
+                             
+                             c5, c6 = st.columns(2)
+                             # Status Management
+                             curr_status = tender_row['status']
+                             status_opts = ["Borrador", "Activa", "Evaluación", "Adjudicada", "Desierta"]
+                             new_status = c5.selectbox("Estado Actual", status_opts, index=status_opts.index(curr_status) if curr_status in status_opts else 0)
+                             
+                             btn_save = st.form_submit_button("💾 Guardar Cambios", type="primary")
+                             
+                             if btn_save:
+                                  # Save all fields including status
+                                  licitaciones.update_tender(selected_tender_id, new_title, new_budget, new_mp_id, new_type)
+                                  if new_status != curr_status:
+                                      licitaciones.update_tender_status(selected_tender_id, new_status)
+                                  
+                                  st.toast("Licitación actualizada", icon="💾")
+                                  st.rerun()
+                         
+                         st.markdown("")
+                         if st.button("🗑️ Eliminar Licitación", key=f"del_ten_{selected_tender_id}", type="primary"):
+                              if can_delete:
+                                  licitaciones.delete_tender(selected_tender_id)
+                                  st.toast("Eliminado", icon="🗑️")
+                                  st.rerun()
+                              else:
+                                  st.error("Permiso denegado.")
                      
-                     st.divider()
-                     st.subheader("📜 Gestión Contractual")
+                         st.divider()
+                         st.subheader("📜 Gestión Contractual")
                      
                      # --- CONTRACTS SECTION ---
                      contracts_df = licitaciones.get_contracts(selected_tender_id)
@@ -280,52 +284,55 @@ def render_tenders():
                              width='stretch'
                          )
                          
-                         # Selector for Management
-                         sel_contract = st.selectbox("Seleccionar Contrato para Gestionar:", contracts_df['id'].tolist(), format_func=lambda x: f"CTR-{x} | {contracts_df[contracts_df['id']==x]['contractor_name'].values[0]}")
-                         
-                         if sel_contract:
-                             k_row = contracts_df[contracts_df['id'] == sel_contract].iloc[0]
-                             with st.container(border=True):
-                                 st.markdown(f"**Editando Contrato: {k_row['contractor_name']}**")
-                                 
-                                 # Edit Form
-                                 with st.form(f"edit_ctr_{sel_contract}"):
-                                     ec1, ec2 = st.columns(2)
-                                     ec_name = ec1.text_input("Razón Social", value=k_row['contractor_name'])
-                                     ec_rut = ec2.text_input("RUT", value=k_row['rut_contractor'])
-                                     
-                                     ec3, ec4 = st.columns(2)
-                                     ec_amount = ec3.number_input("Monto ($)", value=float(k_row['amount']))
-                                     try:
-                                         curr_start = pd.to_datetime(k_row['start_date']).date()
-                                         curr_end = pd.to_datetime(k_row['end_date']).date()
-                                     except:
-                                         from datetime import datetime
-                                         curr_start = datetime.now().date()
-                                         curr_end = datetime.now().date()
-                                         
-                                     ec_start = ec4.date_input("Inicio", value=curr_start)
-                                     
-                                     ec5, ec6 = st.columns(2)
-                                     ec_end = ec5.date_input("Término", value=curr_end)
-                                     
-                                     curr_st = k_row.get('status', 'Activo')
-                                     st_opts = ["Activo", "Finalizado", "Rescindido"]
-                                     ec_status = ec6.selectbox("Estado", st_opts, index=st_opts.index(curr_st) if curr_st in st_opts else 0)
-                                     
-                                     if st.form_submit_button("Actualizar Contrato"):
-                                         licitaciones.update_contract(sel_contract, ec_name, ec_rut, ec_amount, ec_start, ec_end, ec_status)
-                                         st.toast("Contrato Actualizado")
-                                         st.rerun()
-                                 
-                                 c_del_k, _ = st.columns([1, 2])
-                                 with c_del_k:
-                                     if st.button("🗑️ Borrar Contrato", key=f"del_ctr_{sel_contract}"):
-                                         if can_delete:
-                                             licitaciones.delete_contract(sel_contract)
-                                             st.rerun()
-                                         else:
-                                             st.error("No autorizado.")
+                          # Selector for Management
+                          sel_contract = st.selectbox("Seleccionar Contrato para Gestionar:", contracts_df['id'].tolist(), format_func=lambda x: f"CTR-{x} | {contracts_df[contracts_df['id']==x]['contractor_name'].values[0]}")
+                          
+                          if sel_contract:
+                              k_filtered = contracts_df[contracts_df['id'] == sel_contract]
+                              if k_filtered.empty:
+                                  st.error("Contrato no encontrado.")
+                              else:
+                                  k_row = k_filtered.iloc[0]
+                                  with st.container(border=True):
+                                      st.markdown(f"**Editando Contrato: {k_row['contractor_name']}**")
+                                      
+                                      with st.form(f"edit_ctr_{sel_contract}"):
+                                          ec1, ec2 = st.columns(2)
+                                          ec_name = ec1.text_input("Razón Social", value=k_row['contractor_name'])
+                                          ec_rut = ec2.text_input("RUT", value=k_row['rut_contractor'])
+                                          
+                                          ec3, ec4 = st.columns(2)
+                                          ec_amount = ec3.number_input("Monto ($)", value=float(k_row['amount']))
+                                          try:
+                                              curr_start = pd.to_datetime(k_row['start_date']).date()
+                                              curr_end = pd.to_datetime(k_row['end_date']).date()
+                                          except:
+                                              from datetime import datetime
+                                              curr_start = datetime.now().date()
+                                              curr_end = datetime.now().date()
+                                              
+                                          ec_start = ec4.date_input("Inicio", value=curr_start)
+                                          
+                                          ec5, ec6 = st.columns(2)
+                                          ec_end = ec5.date_input("Término", value=curr_end)
+                                          
+                                          curr_st = k_row.get('status', 'Activo')
+                                          st_opts = ["Activo", "Finalizado", "Rescindido"]
+                                          ec_status = ec6.selectbox("Estado", st_opts, index=st_opts.index(curr_st) if curr_st in st_opts else 0)
+                                          
+                                          if st.form_submit_button("Actualizar Contrato"):
+                                              licitaciones.update_contract(sel_contract, ec_name, ec_rut, ec_amount, ec_start, ec_end, ec_status)
+                                              st.toast("Contrato Actualizado")
+                                              st.rerun()
+                                      
+                                      c_del_k, _ = st.columns([1, 2])
+                                      with c_del_k:
+                                          if st.button("🗑️ Borrar Contrato", key=f"del_ctr_{sel_contract}"):
+                                              if can_delete:
+                                                  licitaciones.delete_contract(sel_contract)
+                                                  st.rerun()
+                                              else:
+                                                  st.error("No autorizado.")
                                          
                                  # --- GUARANTEES SECTION REMOVED ---
                                  # (User requested removal of Boletas de Garantía view)

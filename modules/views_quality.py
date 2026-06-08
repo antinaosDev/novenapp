@@ -283,17 +283,20 @@ def render_quality():
              st.caption("Gestionar Ensayos Existentes")
              sel_test = st.selectbox("Seleccionar Ensayo ID", lab_df['id'].tolist(), format_func=lambda x: f"#{x} - {lab_df[lab_df['id']==x]['test_type'].values[0]}")
              if sel_test:
-                 row = lab_df[lab_df['id'] == sel_test].iloc[0]
-                 with st.form(f"edit_test_{sel_test}"):
-                     c1, c2 = st.columns(2)
-                     u_type = c1.selectbox("Tipo", ["Hormigón (Compresión)", "Mecánica de Suelos", "Acero (Tracción)", "Asfalto", "Topografía", "Otro"], index=["Hormigón (Compresión)", "Mecánica de Suelos", "Acero (Tracción)", "Asfalto", "Topografía", "Otro"].index(row['test_type']) if row['test_type'] in ["Hormigón (Compresión)", "Mecánica de Suelos", "Acero (Tracción)", "Asfalto", "Topografía", "Otro"] else 0)
-                     u_res = c2.selectbox("Resultado", ["Pendiente", "Aprobado", "Rechazado"], index=["Pendiente", "Aprobado", "Rechazado"].index(row['result']))
-                     u_obs = st.text_input("Observación", value=row.get('observation', ''))
-                     
-                     if st.form_submit_button("Actualizar Ensayo"):
-                         quality.update_lab_test(sel_test, u_type, pd.to_datetime(row['test_date']), u_res, u_obs) # Keeping date same for simplicity or add input
+                 lab_filtered = lab_df[lab_df['id'] == sel_test]
+                 if lab_filtered.empty:
+                     st.error("Ensayo no encontrado.")
+                 else:
+                     row = lab_filtered.iloc[0]
+                     with st.form(f"edit_test_{sel_test}"):
+                          c1, c2 = st.columns(2)
+                          u_type = c1.selectbox("Tipo", ["Hormigón (Compresión)", "Mecánica de Suelos", "Acero (Tracción)", "Asfalto", "Topografía", "Otro"], index=["Hormigón (Compresión)", "Mecánica de Suelos", "Acero (Tracción)", "Asfalto", "Topografía", "Otro"].index(row['test_type']) if row['test_type'] in ["Hormigón (Compresión)", "Mecánica de Suelos", "Acero (Tracción)", "Asfalto", "Topografía", "Otro"] else 0)
+                          u_res = c2.selectbox("Resultado", ["Pendiente", "Aprobado", "Rechazado"], index=["Pendiente", "Aprobado", "Rechazado"].index(row['result']))
+                          u_obs = st.text_input("Observación", value=row.get('observation', ''))
+                          if st.form_submit_button("Actualizar Ensayo"):
+                              quality.update_lab_test(sel_test, u_type, pd.to_datetime(row['test_date']), u_res, u_obs)
+                              st.rerun()
+                   
+                     if st.button("Eliminar Ensayo", key=f"del_test_{sel_test}"):
+                         quality.delete_lab_test(sel_test)
                          st.rerun()
-                 
-                 if st.button("Eliminar Ensayo", key=f"del_test_{sel_test}"):
-                     quality.delete_lab_test(sel_test)
-                     st.rerun()
