@@ -178,7 +178,8 @@ def get_projects():
             'id', 'name', 'description', 'budget_total',
             'start_date', 'end_date', 'status', 'latitude', 'longitude'
         ])
-    for col in ['budget_total', 'latitude', 'longitude']:
+    numeric_cols = ['id', 'budget_total', 'latitude', 'longitude']
+    for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     return df
@@ -1015,18 +1016,25 @@ def get_config(key, default=None):
     return row.iloc[0].get('value', default)
 
 def set_config(key, value):
-    df = read_worksheet("system_config")
-    if df.empty or 'key' not in df.columns:
-        append_row("system_config", {"key": key, "value": str(value)})
-        return True, "Success"
-
-    existing = df[df['key'] == key]
-    if not existing.empty:
-        update_row_by_id("system_config", existing.iloc[0]['id'], {"value": str(value)})
-    else:
-        new_id = get_next_id("system_config")
-        append_row("system_config", {"id": new_id, "key": key, "value": str(value)})
-    return True, "Success"
+    """Set a config key-value pair. Works with or without 'id' column."""
+    try:
+        ws = get_sheet().worksheet("system_config")
+        headers = ws.row_values(1)
+        if headers and 'key' in headers:
+            all_rows = ws.get_all_values()
+            for i, row in enumerate(all_rows[1:], start=2):
+                if len(row) > 0 and row[0] == key:
+                    val_col = headers.index('value') + 1 if 'value' in headers else 2
+                    ws.update_cell(i, val_col, str(value))
+                    return True, "Updated"
+        # Not found or no headers → append
+        if not headers or headers[0] != 'key':
+            ws.update([['key', 'value']], 'A1')
+        ws.append_row([key, str(value)])
+        return True, "Appended"
+    except Exception as e:
+        print(f"Error set_config({key}): {e}")
+        return False, str(e)
 
 # --- AI Usage ---
 def log_ai_usage(user_id, tokens):
