@@ -462,9 +462,12 @@ def render_config():
                 end = c2.date_input("Fin")
                 
                 if st.form_submit_button("Guardar Proyecto"):
-                    data.add_project(name, desc, budget, start, end)
-                    st.success(f"Proyecto {name} creado.")
-                    st.rerun()
+                    ok = data.add_project(name, desc, budget, start, end)
+                    if ok:
+                        st.success(f"Proyecto {name} creado.")
+                        st.rerun()
+                    else:
+                        st.error("Error al crear proyecto. Reintenta.")
         
         st.divider()
         st.subheader("Proyectos Existentes")

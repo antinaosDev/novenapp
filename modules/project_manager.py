@@ -160,12 +160,15 @@ def render_projects_overview():
                     n_lon = c_lon.number_input("Longitud", value=st.session_state.new_p_lon, format="%.6f", key="np_lon_inp")
                     
                     if st.form_submit_button("Guardar Proyecto", type="primary"):
-                        data.add_project(name, desc, budget, start, end, n_lat, n_lon)
-                        st.success(f"Proyecto {name} creado.")
+                        ok = data.add_project(name, desc, budget, start, end, n_lat, n_lon)
+                        if ok:
+                            st.success(f"Proyecto {name} creado.")
+                        else:
+                            st.error("Error al crear proyecto. Reintenta.")
                         # Reset
                         st.session_state.pop('new_p_lat', None)
                         st.session_state.pop('new_p_lon', None)
-                        st.session_state.pop('new_proj_addr_input', None) # Might not work for key, but ok
+                        st.session_state.pop('new_proj_addr_input', None)
                         st.rerun()
 
     # --- Projects List ---

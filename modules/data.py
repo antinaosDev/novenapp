@@ -5,6 +5,8 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 import os
+import time
+import random
 
 # --- Config ---
 SPREADSHEET_ID = "1dFeMiekQKnA4xRPju9Wd62JWd_4fmW-xvqZ7XpdXDEY"
@@ -50,7 +52,7 @@ def get_sheet():
     client = get_gs_client()
     return client.open_by_key(SPREADSHEET_ID)
 
-@st.cache_data(ttl=3, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def _read_worksheet_cached(worksheet_name):
     try:
         ws = get_sheet().worksheet(worksheet_name)
@@ -65,6 +67,21 @@ def _clear_worksheet_cache(worksheet_name=None):
     else:
         _read_worksheet_cached.clear()
 
+def _is_rate_limit(e):
+    return hasattr(e, 'code') and e.code == 429 or '429' in str(e)
+
+def _retry(fn, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return fn(), True
+        except Exception as e:
+            if _is_rate_limit(e) and attempt < max_retries - 1:
+                delay = 1.5 ** attempt + random.random()
+                time.sleep(delay)
+                continue
+            raise
+    return None, False
+
 def read_worksheet(worksheet_name, expected_columns=None):
     all_rows = _read_worksheet_cached(worksheet_name)
     if not all_rows or len(all_rows) <= 1:
@@ -76,7 +93,6 @@ def read_worksheet(worksheet_name, expected_columns=None):
     return pd.DataFrame(data_rows)
 
 def write_worksheet(worksheet_name, df):
-    """Write a DataFrame back to a worksheet (full replace)."""
     try:
         ws = get_sheet().worksheet(worksheet_name)
         ws.clear()
@@ -87,65 +103,90 @@ def write_worksheet(worksheet_name, df):
             values = df.values.tolist()
             ws.update([headers] + values, "A1")
         _clear_worksheet_cache(worksheet_name)
+        return True
     except Exception as e:
         print(f"Error writing {worksheet_name}: {e}")
+        return False
 
 def append_row(worksheet_name, row_dict):
-    """Append a single row to a worksheet (manual append using update)."""
     try:
         ws = get_sheet().worksheet(worksheet_name)
-        headers = ws.row_values(1) if ws.row_values(1) else list(row_dict.keys())
+        all_rows = _read_worksheet_cached(worksheet_name)
+        headers = all_rows[0] if all_rows else list(row_dict.keys())
+        if not headers:
+            headers = list(row_dict.keys())
         row_values = [str(row_dict.get(h, "")) if row_dict.get(h) is not None else "" for h in headers]
-        all_rows = ws.get_all_values()
         next_row = len(all_rows) + 1
-        range_str = f"A{next_row}:{chr(64 + len(headers)) if len(headers) <= 26 else 'A'}{next_row}"
-        ws.update(range_str, [row_values], value_input_option="USER_ENTERED")
+        col_letter = chr(64 + len(headers)) if 1 <= len(headers) <= 26 else 'Z'
+        range_str = f"A{next_row}:{col_letter}{next_row}"
+
+        def _do_update():
+            ws.update(range_str, [row_values], value_input_option="USER_ENTERED")
+
+        result, ok = _retry(_do_update)
+        if not ok:
+            print(f"Error appending to {worksheet_name} after retries")
+            return False
         _clear_worksheet_cache(worksheet_name)
+        return True
     except Exception as e:
         print(f"Error appending to {worksheet_name}: {e}")
+        return False
 
 def update_row_by_id(worksheet_name, row_id, update_dict):
-    """Find a row by 'id' column and update fields."""
     try:
         ws = get_sheet().worksheet(worksheet_name)
-        headers = ws.row_values(1)
+        all_rows = _read_worksheet_cached(worksheet_name)
+        headers = all_rows[0] if all_rows else []
         if 'id' not in headers:
-            return
+            return False
         id_col = headers.index('id') + 1
-        all_rows = ws.get_all_values()
-        for i, row in enumerate(all_rows[1:], start=2):
-            if row[id_col - 1] == str(row_id):
-                for key, value in update_dict.items():
-                    if key in headers:
-                        col = headers.index(key) + 1
-                        ws.update_cell(i, col, str(value) if value is not None else "")
-                break
+
+        def _do_update():
+            for i, row in enumerate(all_rows[1:], start=2):
+                if len(row) >= id_col and row[id_col - 1] == str(row_id):
+                    for key, value in update_dict.items():
+                        if key in headers:
+                            col = headers.index(key) + 1
+                            ws.update_cell(i, col, str(value) if value is not None else "")
+                    break
+
+        result, ok = _retry(_do_update)
+        if not ok:
+            return False
         _clear_worksheet_cache(worksheet_name)
+        return True
     except Exception as e:
         print(f"Error updating {worksheet_name} id={row_id}: {e}")
+        return False
 
 def delete_row_by_id(worksheet_name, row_id):
-    """Delete rows matching the given id."""
     try:
         ws = get_sheet().worksheet(worksheet_name)
-        headers = ws.row_values(1)
+        all_rows = _read_worksheet_cached(worksheet_name)
+        headers = all_rows[0] if all_rows else []
         if 'id' not in headers:
-            return
+            return False
         id_col = headers.index('id') + 1
-        all_rows = ws.get_all_values()
-        for i, row in enumerate(all_rows[1:], start=2):
-            if row[id_col - 1] == str(row_id):
-                ws.delete_rows(i)
-                break
+
+        def _do_delete():
+            for i, row in enumerate(all_rows[1:], start=2):
+                if len(row) >= id_col and row[id_col - 1] == str(row_id):
+                    ws.delete_rows(i)
+                    break
+
+        result, ok = _retry(_do_delete)
+        if not ok:
+            return False
         _clear_worksheet_cache(worksheet_name)
+        return True
     except Exception as e:
         print(f"Error deleting from {worksheet_name} id={row_id}: {e}")
+        return False
 
 def get_next_id(worksheet_name):
-    """Get next auto-increment ID."""
     try:
-        ws = get_sheet().worksheet(worksheet_name)
-        all_rows = ws.get_all_values()
+        all_rows = _read_worksheet_cached(worksheet_name)
         if len(all_rows) <= 1:
             return 1
         ids = []
@@ -176,7 +217,7 @@ def add_project(name, description, budget, start_date, end_date, lat=-33.4489, l
         "end_date": str(end_date), "status": "Activo",
         "latitude": lat, "longitude": lon
     }
-    append_row("projects", row)
+    return append_row("projects", row)
 
 def get_projects():
     df = read_worksheet("projects", [
