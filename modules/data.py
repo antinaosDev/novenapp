@@ -17,14 +17,16 @@ CREDENTIALS_FILE = "google_credentials.json"
 _api_lock = threading.Lock()
 _last_api_call = 0.0
 
+_THROTTLE_INTERVAL = 2.0  # seconds (was 1.0 — increased for multi-instance safety)
+
 def _throttle():
-    """Enforce minimum 1-second interval between API calls (serializes across threads)."""
+    """Enforce minimum interval between API calls (serializes across threads/instances)."""
     global _last_api_call
     with _api_lock:
         now = time.time()
         elapsed = now - _last_api_call
-        if elapsed < 1.0:
-            time.sleep(1.0 - elapsed)
+        if elapsed < _THROTTLE_INTERVAL:
+            time.sleep(_THROTTLE_INTERVAL - elapsed)
         _last_api_call = time.time()
 
 # --- Modular Cache (replaces @st.cache_data) ---
@@ -294,11 +296,14 @@ def get_next_id(worksheet_name):
 def init_db():
     """Verify sheet connection and preload common sheets via batchGet."""
     try:
-        _batch_read_worksheets([
+        result = _batch_read_worksheets([
             "projects", "users", "purchase_orders", "tasks",
             "subcontractors", "tenders", "expenses", "comments",
             "project_assignments", "faenas", "units", "system_config"
         ])
+        if not result.get("projects"):
+            st.error("❌ Google Sheets no respondió (límite de 60 req/min excedido). Reintenta en 1 minuto.")
+            st.stop()
     except Exception as e:
         st.error(f"❌ Error de conexión con Google Sheets: {e}")
         st.stop()
