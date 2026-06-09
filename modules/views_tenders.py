@@ -184,7 +184,7 @@ def render_tenders():
             # Actions (Card Style)
             col_sel, col_act = st.columns([2, 2])
             with col_sel:
-                selected_tender_id = st.selectbox("Licitación:", tenders_df['id'].tolist(), format_func=lambda x: f"LIC-{x:04d} - {tenders_df[tenders_df['id']==x]['title'].values[0]}", label_visibility="collapsed")
+                selected_tender_id = st.selectbox("Licitación:", tenders_df['id'].tolist(), format_func=lambda x: f"LIC-{int(x):04d} - {tenders_df[tenders_df['id']==x]['title'].values[0]}", label_visibility="collapsed")
                 
             with col_act:
                  pass # Layout spacer
