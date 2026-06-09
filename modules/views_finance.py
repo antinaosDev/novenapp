@@ -227,7 +227,7 @@ def render_finance():
                     if not po_row.empty:
                         return f"OC-{int(x):04d} | {po_row['order_number'].values[0]} - {po_row['provider_name'].values[0]}"
                     return f"OC-{int(x):04d}"
-                
+
                 po_id = st.selectbox("Seleccionar OC para gestionar:", orders_df['id'].tolist(), format_func=format_po_sel)
         else:
             po_id = None
