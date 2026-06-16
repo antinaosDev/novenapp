@@ -562,6 +562,8 @@ def get_dashboard_alerts():
 
     po_df = read_worksheet("purchase_orders")
     if not po_df.empty and 'status' in po_df.columns:
+        if 'total_amount' in po_df.columns:
+            po_df['total_amount'] = pd.to_numeric(po_df['total_amount'], errors='coerce').fillna(0)
         pending = po_df[po_df['status'] == 'Pendiente']
         for _, po in pending.iterrows():
             identifier = po.get('order_number') or po.get('id', '')
